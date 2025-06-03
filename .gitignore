@@ -24,3 +24,5 @@ TODO
 agentsociety-sim
 agentsociety-ui
 agentsociety_data/
+data/
+config.yaml
