@@ -37,31 +37,29 @@ class InternetAgent(SocietyAgent):
 
         return duration
 
-    async def connect_to_nearest_antenna(self, position):
+    async def connect_to_nearest_antenna(self, position: dict):
         nearest_antenna = await self.get_nearest_antenna(position, 10000.0)
-        if nearest_antenna is not None:
+        if nearest_antenna:
             self.connected_antenna = nearest_antenna
-            logger.info(f"{self.name} connected to antenna {nearest_antenna['id']} - {position}")
+            print(f"{self.name} connected to antenna {nearest_antenna.id} at position {position}")
+            logger.info(f"{self.name} connected to antenna {nearest_antenna.id} - {position}")
         else:
-            logger.warning(f"{self.name} is out of range of any antenna  - {position}")
+            self.connected_antenna = None
+            print(f"{self.name} is out of range of any antenna at position {position}")
+            logger.warning(f"{self.name} is out of range of any antenna - {position}")
 
-    def distance(self, pos1, pos2):
-        return math.sqrt(
+    async def get_nearest_antenna(self, agent_position: dict, range_meters: float):
+        nearest = min(ANTENNAS, key=lambda a: self._distance(agent_position, a.position))
+        return nearest if nearest.is_within_range(agent_position) else None
+
+    def _distance(self, pos1: dict, pos2: dict) -> float:
+        pos = math.sqrt(
             (pos1["x"] - pos2["x"]) ** 2 + (pos1["y"] - pos2["y"]) ** 2
         )
 
-    def is_within_range(self, pos1, pos2, range_meters):
-        print(f"Checking if {pos1} is within {range_meters} of {pos2}")
-        print(f"Distance: {self.distance(pos1, pos2)} = {self.distance(pos1, pos2) <= range_meters}")
-        return self.distance(pos1, pos2) <= range_meters
+        return pos
 
-    async def get_nearest_antenna(self, agent_position, range_meters):
-        nearest = min(ANTENNAS, key=lambda a: self.distance(agent_position, a["position"]))
-
-        if range_meters is not None and not self.is_within_range(agent_position, nearest["position"], range_meters):
-            return None
-            
-        return nearest
+    # -----
 
     def _assign_interests(self):
         """
