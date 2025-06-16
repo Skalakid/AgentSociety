@@ -9,6 +9,9 @@ import datetime
 from agentsociety.cityagent import SocietyAgent
 from utils.antennas import ANTENNAS
 from utils.websites import WEBSITE_DATABASE
+from utils.prompts import CUSTOM_DETAILED_PLAN_PROMPT
+
+from agentsociety.cityagent.sharing_params import SocietyAgentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +19,13 @@ class InternetAgent(SocietyAgent):
     update_with_sim = UpdateWithSimulator()
 
     def __init__(self, id: int, name: str, toolbox, memory):
+
+        custom_agent_params = SocietyAgentConfig(
+            plan_generation_prompt=CUSTOM_DETAILED_PLAN_PROMPT
+        )
+
+        print(f"INIT {custom_agent_params}")
+
         super().__init__(id=id, name=name, toolbox=toolbox, memory=memory)
         self.last_position = None
         self.connected_antenna = None
@@ -66,9 +76,7 @@ class InternetAgent(SocietyAgent):
         Przypisuje agentowi 3 do 5 głównych zainteresowań z oceną od 0 do 10.
         """
         all_interests = list(WEBSITE_DATABASE.keys())
-        # Losujemy liczbę zainteresowań od 3 do 5
         num_interests = random.randint(3, 5)
-        # Losujemy unikalne zainteresowania
         selected_interests = random.sample(all_interests, num_interests)
         
         interests_with_scores = {}
@@ -83,9 +91,7 @@ class InternetAgent(SocietyAgent):
         """
         initial_websites = []
         for interest, score in self.interests.items():
-            # Im wyższa ocena zainteresowania, tym więcej stron z tej kategorii agent zna
-            # Możesz dostosować tę logikę, np. minimum 1 strona, maksimum 3-5 stron na zainteresowanie
-            num_sites_to_add = max(1, min(5, int(score / 2) + 1)) # Przykładowa logika: ocena 0-1 -> 1 strona, 9-10 -> 5 stron
+            num_sites_to_add = max(1, min(5, int(score / 2) + 1)) # ocena 0-1 -> 1 strona, 9-10 -> 5 stron
 
             available_sites = WEBSITE_DATABASE.get(interest, [])
             if available_sites:
