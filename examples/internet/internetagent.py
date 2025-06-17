@@ -1,17 +1,15 @@
 import asyncio
 import logging
+import random
+import datetime
+import math
 
 from agentsociety.agent import CitizenAgentBase
 from agentsociety.tools.tool import UpdateWithSimulator
-import math
-import random
-import datetime
 from agentsociety.cityagent import SocietyAgent
 from utils.antennas import ANTENNAS
 from utils.websites import WEBSITE_DATABASE
 from utils.prompts import CUSTOM_DETAILED_PLAN_PROMPT
-
-from agentsociety.cityagent.sharing_params import SocietyAgentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -19,17 +17,14 @@ class InternetAgent(SocietyAgent):
     update_with_sim = UpdateWithSimulator()
 
     def __init__(self, id: int, name: str, toolbox, memory):
-
-        custom_agent_params = SocietyAgentConfig(
-            plan_generation_prompt=CUSTOM_DETAILED_PLAN_PROMPT
-        )
-
-        print(f"INIT {custom_agent_params}")
-
         super().__init__(id=id, name=name, toolbox=toolbox, memory=memory)
+        
         self.last_position = None
         self.connected_antenna = None
         self.name = name
+        self.current_website = None
+        self.website_start_time = None
+        self.browsing_duration = 0
 
         self.interests = self._assign_interests()
         self.known_websites = self._generate_initial_websites()
@@ -45,16 +40,72 @@ class InternetAgent(SocietyAgent):
         if previous_position != current_position:
             await self.connect_to_nearest_antenna(current_position)
 
+        # Handle website browsing
+        await self._handle_website_browsing(duration)
+
         return duration
+
+    async def _handle_website_browsing(self, duration: int):
+        """Handle website browsing logic"""
+        if not self.connected_antenna:
+            self.current_website = None
+            self.website_start_time = None
+            return
+
+        # If not currently browsing, decide whether to start
+        if not self.current_website:
+            if random.random() < 0.3:  # 30% chance to start browsing
+                await self._start_browsing()
+        else:
+            # Update browsing duration
+            self.browsing_duration += duration
+            
+            # Check if we should stop browsing
+            if self.browsing_duration >= self.expected_duration:
+                await self._stop_browsing()
+
+    async def _start_browsing(self):
+        """Start browsing a new website using the antenna's surf_internet method"""
+        if not self.connected_antenna:
+            return
+
+        website, duration = self.connected_antenna.surf_internet(
+            agent_id=self.id,
+            agent_name=self.name,
+            interests=self.interests,
+            known_websites=self.known_websites
+        )
+
+        if website:
+            self.current_website = website
+            self.website_start_time = datetime.datetime.now()
+            self.browsing_duration = 0
+            self.expected_duration = duration
+            print(f"{self.name} started browsing {website}")
+
+    async def _stop_browsing(self):
+        """Stop browsing current website"""
+        if self.current_website:
+            print(f"{self.name} stopped browsing {self.current_website} after {self.browsing_duration} ticks")
+            self.current_website = None
+            self.website_start_time = None
+            self.browsing_duration = 0
+            self.expected_duration = 0
 
     async def connect_to_nearest_antenna(self, position: dict):
         nearest_antenna = await self.get_nearest_antenna(position, 10000.0)
+        
+        # Disconnect from previous antenna if exists
+        if self.connected_antenna:
+            self.connected_antenna.disconnect_agent(self.id)
+            self.connected_antenna = None
+
         if nearest_antenna:
             self.connected_antenna = nearest_antenna
+            nearest_antenna.connect_agent(self.id)
             print(f"{self.name} connected to antenna {nearest_antenna.id} at position {position}")
             logger.info(f"{self.name} connected to antenna {nearest_antenna.id} - {position}")
         else:
-            self.connected_antenna = None
             print(f"{self.name} is out of range of any antenna at position {position}")
             logger.warning(f"{self.name} is out of range of any antenna - {position}")
 
@@ -66,10 +117,7 @@ class InternetAgent(SocietyAgent):
         pos = math.sqrt(
             (pos1["x"] - pos2["x"]) ** 2 + (pos1["y"] - pos2["y"]) ** 2
         )
-
         return pos
-
-    # -----
 
     def _assign_interests(self):
         """
@@ -81,7 +129,6 @@ class InternetAgent(SocietyAgent):
         
         interests_with_scores = {}
         for interest in selected_interests:
-            # Przypisujemy losową ocenę od 0 do 10 dla każdego zainteresowania
             interests_with_scores[interest] = random.randint(0, 10)
         return interests_with_scores
     
@@ -91,20 +138,16 @@ class InternetAgent(SocietyAgent):
         """
         initial_websites = []
         for interest, score in self.interests.items():
-            num_sites_to_add = max(1, min(5, int(score / 2) + 1)) # ocena 0-1 -> 1 strona, 9-10 -> 5 stron
+            num_sites_to_add = max(1, min(5, int(score / 2) + 1))
 
             available_sites = WEBSITE_DATABASE.get(interest, [])
             if available_sites:
-                # Losujemy unikalne strony z danej kategorii
                 selected_sites = random.sample(
                     available_sites, 
                     min(len(available_sites), num_sites_to_add)
                 )
 
                 for site in selected_sites:
-                    # Tutaj będzie miejsce na odpytanie LLM o ocenę strony.
-                    # Na razie przypisujemy losową wartość jako placeholder.
-                    # W przyszłości: LLM_evaluation_score = await self.llm.evaluate_website(site, self.interests)
                     website_score = random.randint(0, 10) 
                     initial_websites.append({
                         "website": site,

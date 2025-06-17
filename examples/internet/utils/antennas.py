@@ -2,7 +2,9 @@ import math
 import datetime
 import json
 import os
-import threading # Dodajemy threading dla zabezpieczenia przed race condition przy zapisie
+import threading
+import random
+from typing import Optional, Tuple
 
 MIN_X = -30000.0  # Minimalna współrzędna X mapy
 MAX_X = 30000.0   # Maksymalna współrzędna X mapy
@@ -27,12 +29,6 @@ FULL_GLOBAL_LOG_PATH = os.path.join(GLOBAL_LOG_DIR, GLOBAL_INTERNET_LOG_FILE)
 log_file_lock = threading.Lock()
 
 class Antenna:
-    """
-    Reprezentuje pojedynczą antenę w symulacji, odpowiedzialną za
-    obsługę połączeń internetowych i zapisywanie logów aktywności
-    do wspólnego pliku.
-    """
-
     def __init__(self, id: int, position: dict, range: float):
         """
         Inicjalizuje obiekt Antena.
@@ -46,6 +42,7 @@ class Antenna:
         self.category = "antenna"
         self.position = position
         self.range = range
+        self.active_connections = set()  # Set of agent IDs currently connected
 
     def is_within_range(self, agent_position: dict) -> bool:
         """
@@ -57,10 +54,63 @@ class Antenna:
         )
         return distance <= self.range
 
-    def log_internet_activity(self, agent_id: int, agent_name: str, website_url: str, duration_ticks: int):
+    def surf_internet(self, agent_id: int, agent_name: str, interests: dict, known_websites: list) -> Tuple[Optional[str], int]:
         """
-        Zapisuje log aktywności internetowej do jednego wspólnego pliku JSONL.
-        Używa blokady, aby zapewnić bezpieczeństwo zapisu współbieżnego.
+        Jedyna metoda dostępu do internetu dla agentów. Wybiera stronę na podstawie zainteresowań
+        i znanych stron, zapisuje log aktywności i zwraca wybraną stronę wraz z czasem przeglądania.
+
+        Args:
+            agent_id (int): ID agenta
+            agent_name (str): Nazwa agenta
+            interests (dict): Słownik zainteresowań agenta
+            known_websites (list): Lista znanych stron agenta
+
+        Returns:
+            Tuple[Optional[str], int]: (wybrana strona, czas przeglądania w tickach)
+        """
+        if agent_id not in self.active_connections:
+            return None, 0
+
+        # Wybierz stronę na podstawie zainteresowań i znanych stron
+        website = self._select_website(interests, known_websites)
+        if not website:
+            return None, 0
+
+        # Określ czas przeglądania (5-15 minut)
+        duration = random.randint(300, 900)
+
+        # Zapisz log aktywności
+        self._log_activity(agent_id, agent_name, website, duration)
+
+        return website, duration
+
+    def _select_website(self, interests: dict, known_websites: list) -> Optional[str]:
+        """
+        Wybiera stronę na podstawie zainteresowań i znanych stron.
+        """
+        # Najpierw spróbuj wybrać ze znanych stron o wysokiej ocenie
+        high_score_sites = [site for site in known_websites if site["score"] >= 7]
+        if high_score_sites:
+            return random.choice(high_score_sites)["website"]
+
+        # Jeśli nie ma stron o wysokiej ocenie, wybierz na podstawie zainteresowań
+        interest_weights = {k: v/10 for k, v in interests.items()}
+        selected_interest = random.choices(
+            list(interest_weights.keys()),
+            weights=list(interest_weights.values()),
+            k=1
+        )[0]
+
+        # Pobierz dostępne strony dla wybranego zainteresowania
+        available_sites = WEBSITE_DATABASE.get(selected_interest, [])
+        if available_sites:
+            return random.choice(available_sites)
+
+        return None
+
+    def _log_activity(self, agent_id: int, agent_name: str, website_url: str, duration_ticks: int):
+        """
+        Zapisuje log aktywności internetowej do pliku.
         """
         log_entry = {
             "timestamp": datetime.datetime.now().isoformat(),
@@ -71,10 +121,17 @@ class Antenna:
             "duration_ticks": duration_ticks
         }
         
-        # Używamy blokady, aby tylko jedna antena mogła zapisywać do pliku w danym momencie
         with log_file_lock:
             with open(FULL_GLOBAL_LOG_PATH, 'a') as f:
                 f.write(json.dumps(log_entry) + '\n')
+
+    def connect_agent(self, agent_id: int):
+        """Dodaje agenta do listy aktywnych połączeń"""
+        self.active_connections.add(agent_id)
+
+    def disconnect_agent(self, agent_id: int):
+        """Usuwa agenta z listy aktywnych połączeń"""
+        self.active_connections.discard(agent_id)
 
     def to_dict(self):
         """Zwraca reprezentację anteny w formie słownika."""
