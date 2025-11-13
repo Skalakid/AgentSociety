@@ -26,3 +26,4 @@ agentsociety-sim
 agentsociety-ui
 agentsociety_data/
 .agentsociety-benchmark/
+venv

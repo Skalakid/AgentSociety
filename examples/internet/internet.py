@@ -1,6 +1,6 @@
 import asyncio
 
-from agentsociety.cityagent import default
+git
 from agentsociety.configs import (
     AgentsConfig,
     Config,
@@ -15,17 +15,16 @@ from agentsociety.environment import EnvironmentConfig
 from agentsociety.llm import LLMProviderType
 from agentsociety.simulation import AgentSociety
 from agentsociety.storage import DatabaseConfig
-
+from internetagent import InternetAgent
 
 config = Config(
     llm=[
         LLMConfig(
-            provider=LLMProviderType.Qwen,
+            provider=LLMProviderType.ZhipuAI,
             base_url=None,
             api_key="",
             model="GLM-4-Flash",
-            concurrency=200,
-            timeout=60,
+            semaphore=200,
         )
     ],
     env=EnvConfig(
@@ -36,45 +35,28 @@ config = Config(
         ),
     ),
     map=MapConfig(
-        file_path="<MAP-FILE-PATH>",
+        file_path="../../agentsociety_data/beijing.pb",
     ),
     agents=AgentsConfig(
         citizens=[
             AgentConfig(
-                agent_class="citizen",
-                number=100,
+                agent_class=InternetAgent,
+                number=10,
                 memory_from_file="profiles_hurricane.json",
             )
-        ],
+        ]
     ),  # type: ignore
     exp=ExpConfig(
-        name="hurricane_impact",
+        name="internet",
         workflow=[
             WorkflowStepConfig(
                 type=WorkflowType.RUN,
-                days=3,
-            ),
-            WorkflowStepConfig(
-                type=WorkflowType.ENVIRONMENT_INTERVENE,
-                key="weather",
-                value="Hurricane Dorian has made landfall in other cities, travel is slightly affected, and winds can be felt.",
-            ),
-            WorkflowStepConfig(
-                type=WorkflowType.RUN,
-                days=3,
-            ),
-            WorkflowStepConfig(
-                type=WorkflowType.ENVIRONMENT_INTERVENE,
-                key="weather",
-                value="The weather is normal and does not affect travel",
-            ),
-            WorkflowStepConfig(
-                type=WorkflowType.RUN,
-                days=3,
+                days=1,
             ),
         ],
         environment=EnvironmentConfig(
             start_tick=6 * 60 * 60,
+            total_tick= 30 * 60,
         ),
     ),
 )

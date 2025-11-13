@@ -1,0 +1,23 @@
+llm:
+  - model: GLM-4-Flash
+    api_key:
+    provider: zhipuai
+env:
+  db:
+    enabled: true
+    db_type: sqlite
+  home_dir: ./agentsociety_data
+map:
+  file_path: ./agentsociety_data/beijing.pb
+agents:
+  citizens:
+    - agent_class: SocietyAgent
+      number: 10
+exp:
+  name: simplest_exp
+  workflow:
+    - type: run
+      days: 1
+      ticks_per_step: 300
+  environment:
+    start_tick: 28800
