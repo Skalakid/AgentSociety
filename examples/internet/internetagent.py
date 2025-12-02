@@ -13,8 +13,15 @@ from utils.prompts import CUSTOM_DETAILED_PLAN_PROMPT
 logger = logging.getLogger(__name__)
 
 class InternetAgent(SocietyAgent):
-    def __init__(self, id: int, name: str, toolbox, memory):
-        super().__init__(id=id, name=name, toolbox=toolbox, memory=memory)
+    def __init__(self, id: int, name: str, toolbox, memory, agent_params=None, blocks=None):
+        super().__init__(
+            id=id, 
+            name=name, 
+            toolbox=toolbox, 
+            memory=memory,
+            agent_params=agent_params,
+            blocks=blocks
+        )
         
         self.last_position = None
         self.connected_antenna = None
@@ -25,21 +32,36 @@ class InternetAgent(SocietyAgent):
 
         self.interests = self._assign_interests()
         self.known_websites = self._generate_initial_websites()
+        self.last_xy_position = None  # Track last position for comparison
 
-        print(f"{self.name} initialized with interests: {self.interests} and {len(self.known_websites)} known websites.")
+        print(f"$ANTENA$ - {self.name} initialized with interests: {self.interests} and {len(self.known_websites)} known websites.")
 
     async def forward(self):
-        previous_position = await self.memory.status.get("position")
+        # Get current position before parent forward to check antenna connectivity
+        current_position = await self.memory.status.get("position")
+        current_xy = current_position.get("xy_position") if current_position else None
+
+        # Check if position changed and update antenna connection BEFORE parent forward
+        if current_xy:
+            if self.last_xy_position is None:
+                # First time setting position
+                print(f"$ANTENA$ - {self.name} initial position set to ({current_xy['x']},{current_xy['y']})")
+                await self.connect_to_nearest_antenna(current_xy)
+                self.last_xy_position = {"x": current_xy["x"], "y": current_xy["y"]}
+            elif self.last_xy_position['x'] != current_xy['x'] or self.last_xy_position['y'] != current_xy['y']:
+                # Position changed
+                print(f"$ANTENA$ - {self.name} position changed from ({self.last_xy_position['x']},{self.last_xy_position['y']}) to ({current_xy['x']},{current_xy['y']})")
+                await self.connect_to_nearest_antenna(current_xy)
+                self.last_xy_position = {"x": current_xy["x"], "y": current_xy["y"]}
+
+        # Update internet connectivity status in memory so the agent knows during decision making
+        has_internet = self.connected_antenna is not None
+        await self.memory.status.update("has_internet", has_internet)
 
         duration = await super().forward()
 
-        current_position = (await self.memory.status.get("position"))["xy_position"]
-        if previous_position != current_position:
-            await self.connect_to_nearest_antenna(current_position)
-
-        # Handle website browsing
-        await self._handle_website_browsing(duration)
-
+        # TODO: Handle website browsing
+        # await self._handle_website_browsing(duration)
         return duration
 
     async def _handle_website_browsing(self, duration: int):
@@ -62,7 +84,9 @@ class InternetAgent(SocietyAgent):
                 await self._stop_browsing()
 
     async def _start_browsing(self):
-        """Start browsing a new website using the antenna's surf_internet method"""
+        """
+        Start browsing a new website using the antenna's surf_internet method
+        """
         if not self.connected_antenna:
             return
 
@@ -78,12 +102,14 @@ class InternetAgent(SocietyAgent):
             self.website_start_time = datetime.datetime.now()
             self.browsing_duration = 0
             self.expected_duration = duration
-            print(f"{self.name} started browsing {website}")
+            print(f"$ANTENA$ - {self.name} started browsing {website}")
 
     async def _stop_browsing(self):
-        """Stop browsing current website"""
+        """
+        Stop browsing current website
+        """
         if self.current_website:
-            print(f"{self.name} stopped browsing {self.current_website} after {self.browsing_duration} ticks")
+            print(f"$ANTENA$ - {self.name} stopped browsing {self.current_website} after {self.browsing_duration} ticks")
             self.current_website = None
             self.website_start_time = None
             self.browsing_duration = 0
@@ -91,7 +117,6 @@ class InternetAgent(SocietyAgent):
 
     async def connect_to_nearest_antenna(self, position: dict):
         nearest_antenna = await self.get_nearest_antenna(position, 10000.0)
-        
         # Disconnect from previous antenna if exists
         if self.connected_antenna:
             self.connected_antenna.disconnect_agent(self.id)
@@ -100,10 +125,10 @@ class InternetAgent(SocietyAgent):
         if nearest_antenna:
             self.connected_antenna = nearest_antenna
             nearest_antenna.connect_agent(self.id)
-            print(f"{self.name} connected to antenna {nearest_antenna.id} at position {position}")
+            print(f"$ANTENA$ - {self.name} connected to antenna {nearest_antenna.id} at position {position}")
             logger.info(f"{self.name} connected to antenna {nearest_antenna.id} - {position}")
         else:
-            print(f"{self.name} is out of range of any antenna at position {position}")
+            print(f"$ANTENA$ - {self.name} is out of range of any antenna at position {position}")
             logger.warning(f"{self.name} is out of range of any antenna - {position}")
 
     async def get_nearest_antenna(self, agent_position: dict, range_meters: float):
@@ -118,7 +143,7 @@ class InternetAgent(SocietyAgent):
 
     def _assign_interests(self):
         """
-        Przypisuje agentowi 3 do 5 głównych zainteresowań z oceną od 0 do 10.
+        Assigns the agent 3 to 5 main interests with a score from 0 to 10.
         """
         all_interests = list(WEBSITE_DATABASE.keys())
         num_interests = random.randint(3, 5)
@@ -131,7 +156,7 @@ class InternetAgent(SocietyAgent):
     
     def _generate_initial_websites(self):
         """
-        Generuje początkowy zestaw "bazowych" stron na podstawie głównych zainteresowań agenta.
+        Generates a base set of websites based on the agent's main interests.
         """
         initial_websites = []
         for interest, score in self.interests.items():

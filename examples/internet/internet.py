@@ -1,6 +1,11 @@
 import asyncio
 
-git
+import copy
+from agentsociety.cityagent import default, memory_config_societyagent, DEFAULT_DISTRIBUTIONS
+from agentsociety.cityagent.blocks.economy_block import EconomyBlock, EconomyBlockParams
+from agentsociety.cityagent.blocks.mobility_block import MobilityBlock, MobilityBlockParams
+from agentsociety.cityagent.blocks.other_block import OtherBlock, OtherBlockParams
+from agentsociety.cityagent.blocks.social_block import SocialBlock, SocialBlockParams
 from agentsociety.configs import (
     AgentsConfig,
     Config,
@@ -42,7 +47,14 @@ config = Config(
             AgentConfig(
                 agent_class=InternetAgent,
                 number=10,
-                memory_from_file="profiles_hurricane.json",
+                memory_config_func=copy.deepcopy(memory_config_societyagent),
+                memory_distributions=copy.deepcopy(DEFAULT_DISTRIBUTIONS),
+                blocks={
+                    MobilityBlock: MobilityBlockParams(),
+                    EconomyBlock: EconomyBlockParams(),
+                    SocialBlock: SocialBlockParams(),
+                    OtherBlock: OtherBlockParams(),
+                },
             )
         ]
     ),  # type: ignore
@@ -55,8 +67,8 @@ config = Config(
             ),
         ],
         environment=EnvironmentConfig(
-            start_tick=6 * 60 * 60,
-            total_tick= 30 * 60,
+            start_tick=12 * 60 * 60,  # Start at 12:00 PM
+            total_tick= 8 * 60 * 60,  # Run for 8 hours (until 8:00 PM) to see more movement
         ),
     ),
 )
