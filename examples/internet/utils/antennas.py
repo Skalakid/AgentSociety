@@ -139,56 +139,69 @@ class Antenna:
         """
         self.active_connections.add(agent_id)
 
-        # Store device information
+        # Store device information and log each device separately
         if devices:
-            # Generate unique IP address for this connection
-            ip_address = self._generate_ip_address(agent_id)
+            device_connections = []
 
-            device_info = {
-                "agent_id": agent_id,
-                "agent_name": agent_name,
-                "ip_address": ip_address,
-                "devices": [
-                    {
+            for device in devices:
+                if device.device_type.value != "none":
+                    # Generate unique IP address for this device
+                    device_id = f"{agent_id}_{device.device_type.value}"
+                    ip_address = self._generate_ip_address_for_device(agent_id, device.device_type.value)
+
+                    device_connection = {
+                        "agent_id": agent_id,
+                        "agent_name": agent_name,
                         "device_name": device.name,
                         "device_type": device.device_type.value,
-                        "device_id": f"{agent_id}_{device.device_type.value}",
+                        "device_id": device_id,
+                        "ip_address": ip_address
                     }
-                    for device in devices if device.device_type.value != "none"
-                ]
-            }
-            self.connected_devices[agent_id] = device_info
+                    device_connections.append(device_connection)
 
-            # Log the connection
-            self._log_device_connection(agent_id, "connect", device_info)
+                    # Log each device connection separately
+                    self._log_device_connection(agent_id, "connect", device_connection)
+
+            # Store all device connections for this agent
+            self.connected_devices[agent_id] = device_connections
 
     def disconnect_agent(self, agent_id: int):
         """Remove agent from the list of active connections and log disconnection"""
         self.active_connections.discard(agent_id)
 
-        # Log disconnection if device info exists
+        # Log disconnection for each device separately
         if agent_id in self.connected_devices:
-            device_info = self.connected_devices[agent_id]
-            self._log_device_connection(agent_id, "disconnect", device_info)
+            device_connections = self.connected_devices[agent_id]
+            for device_connection in device_connections:
+                self._log_device_connection(agent_id, "disconnect", device_connection)
             del self.connected_devices[agent_id]
 
-    def _generate_ip_address(self, agent_id: int) -> str:
-        """Generate a unique IP address for the agent"""
-        # Simple IP generation based on antenna ID and agent ID
+    def _generate_ip_address_for_device(self, agent_id: int, device_type: str) -> str:
+        """Generate a unique IP address for a specific device"""
+        # Device type to number mapping for IP generation
+        device_type_mapping = {
+            "smartphone": 1,
+            "laptop": 2,
+            "desktop": 3,
+            "tablet": 4
+        }
+
+        # Generate IP based on antenna ID, agent ID, and device type
         octet1 = 10  # Private IP range
         octet2 = (self.id // 256) % 256
         octet3 = self.id % 256
-        octet4 = agent_id % 254 + 1
+        device_offset = device_type_mapping.get(device_type, 0) * 50
+        octet4 = ((agent_id + device_offset) % 254) + 1
         return f"{octet1}.{octet2}.{octet3}.{octet4}"
 
     def _log_device_connection(self, agent_id: int, action: str, device_info: dict):
         """
-        Log device connection/disconnection to the antenna.
+        Log single device connection/disconnection to the antenna.
 
         Args:
             agent_id: Agent ID
             action: "connect" or "disconnect"
-            device_info: Information about agent's devices
+            device_info: Information about a single device (not a list)
         """
         log_entry = {
             "timestamp": datetime.datetime.now().isoformat(),
@@ -200,8 +213,10 @@ class Antenna:
             },
             "agent_id": agent_id,
             "agent_name": device_info.get("agent_name"),
-            "ip_address": device_info.get("ip_address"),
-            "devices": device_info.get("devices", [])
+            "device_name": device_info.get("device_name"),
+            "device_type": device_info.get("device_type"),
+            "device_id": device_info.get("device_id"),
+            "ip_address": device_info.get("ip_address")
         }
 
         with device_connection_lock:
