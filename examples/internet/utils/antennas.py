@@ -7,47 +7,49 @@ import random
 from typing import Optional, Tuple
 from .websites import WEBSITE_DATABASE
 
-MIN_X = -30000.0  # Minimalna współrzędna X mapy
-MAX_X = 30000.0   # Maksymalna współrzędna X mapy
-MIN_Y = -30000.0  # Minimalna współrzędna Y mapy
-MAX_Y = 30000.0   # Maksymalna współrzędna Y mapy
+MIN_X = -30000.0  # Minimum X coordinate of the map
+MAX_X = 30000.0   # Maximum X coordinate of the map
+MIN_Y = -30000.0  # Minimum Y coordinate of the map
+MAX_Y = 30000.0   # Maximum Y coordinate of the map
 
 ANTENNA_RANGE = 5000.0
 
-# --- Globalna ścieżka do pliku logu internetowego ---
-# Możesz zmienić nazwę pliku, jeśli chcesz
+# --- Global path to internet log file ---
 GLOBAL_INTERNET_LOG_FILE = "all_internet_activity_logs.jsonl"
-# Możesz także zdefiniować katalog logów, jeśli chcesz
+GLOBAL_DEVICE_CONNECTION_LOG_FILE = "antenna_device_connections.jsonl"
 GLOBAL_LOG_DIR = "internet_logs"
 
-# Zapewniamy, że katalog logów istnieje
+# Ensure the log directory exists
 os.makedirs(GLOBAL_LOG_DIR, exist_ok=True)
-# Pełna ścieżka do pliku logu
-FULL_GLOBAL_LOG_PATH = os.path.join(GLOBAL_LOG_DIR, GLOBAL_INTERNET_LOG_FILE)
 
-# Tworzymy blokadę (lock) do bezpiecznego zapisu do pliku,
-# aby uniknąć problemów, gdy wiele anten próbuje zapisać jednocześnie.
+# Full paths to log files
+FULL_GLOBAL_LOG_PATH = os.path.join(GLOBAL_LOG_DIR, GLOBAL_INTERNET_LOG_FILE)
+FULL_DEVICE_CONNECTION_LOG_PATH = os.path.join(GLOBAL_LOG_DIR, GLOBAL_DEVICE_CONNECTION_LOG_FILE)
+
+# Create locks for thread-safe file writing
 log_file_lock = threading.Lock()
+device_connection_lock = threading.Lock()
 
 class Antenna:
     def __init__(self, id: int, position: dict, range: float):
         """
-        Inicjalizuje obiekt Antena.
+        Initialize an Antenna object.
 
         Args:
-            id (int): Unikalny identyfikator anteny.
-            position (dict): Słownik z kluczami 'x' i 'y' reprezentujący pozycję anteny.
-            range (float): Zasięg działania anteny w metrach.
+            id (int): Unique antenna identifier.
+            position (dict): Dictionary with 'x' and 'y' keys representing the antenna's position.
+            range (float): Operating range of the antenna in meters.
         """
         self.id = id
         self.category = "antenna"
         self.position = position
         self.range = range
         self.active_connections = set()  # Set of agent IDs currently connected
+        self.connected_devices = {}  # Dict mapping agent_id to device info
 
     def is_within_range(self, agent_position: dict) -> bool:
         """
-        Sprawdza, czy dana pozycja agenta znajduje się w zasięgu anteny.
+        Check if the given agent position is within the antenna's range.
         """
         distance = math.sqrt(
             (self.position['x'] - agent_position['x'])**2 +
@@ -57,44 +59,44 @@ class Antenna:
 
     def surf_internet(self, agent_id: int, agent_name: str, interests: dict, known_websites: list) -> Tuple[Optional[str], int]:
         """
-        Jedyna metoda dostępu do internetu dla agentów. Wybiera stronę na podstawie zainteresowań
-        i znanych stron, zapisuje log aktywności i zwraca wybraną stronę wraz z czasem przeglądania.
+        The only method for agents to access the internet. Selects a website based on interests
+        and known websites, logs the activity, and returns the selected website with browsing time.
 
         Args:
-            agent_id (int): ID agenta
-            agent_name (str): Nazwa agenta
-            interests (dict): Słownik zainteresowań agenta
-            known_websites (list): Lista znanych stron agenta
+            agent_id (int): Agent ID
+            agent_name (str): Agent name
+            interests (dict): Dictionary of agent's interests
+            known_websites (list): List of agent's known websites
 
         Returns:
-            Tuple[Optional[str], int]: (wybrana strona, czas przeglądania w tickach)
+            Tuple[Optional[str], int]: (selected website, browsing time in ticks)
         """
         if agent_id not in self.active_connections:
             return None, 0
 
-        # Wybierz stronę na podstawie zainteresowań i znanych stron
+        # Select website based on interests and known websites
         website = self._select_website(interests, known_websites)
         if not website:
             return None, 0
 
-        # Określ czas przeglądania (5-15 minut)
+        # Determine browsing time (5-15 minutes)
         duration = random.randint(300, 900)
 
-        # Zapisz log aktywności
+        # Log the activity
         self._log_activity(agent_id, agent_name, website, duration)
 
         return website, duration
 
     def _select_website(self, interests: dict, known_websites: list) -> Optional[str]:
         """
-        Wybiera stronę na podstawie zainteresowań i znanych stron.
+        Select a website based on interests and known websites.
         """
-        # Najpierw spróbuj wybrać ze znanych stron o wysokiej ocenie
+        # First try to select from known websites with high ratings
         high_score_sites = [site for site in known_websites if site["score"] >= 7]
         if high_score_sites:
             return random.choice(high_score_sites)["website"]
 
-        # Jeśli nie ma stron o wysokiej ocenie, wybierz na podstawie zainteresowań
+        # If no high-rated websites, select based on interests
         interest_weights = {k: v/10 for k, v in interests.items()}
         selected_interest = random.choices(
             list(interest_weights.keys()),
@@ -102,7 +104,7 @@ class Antenna:
             k=1
         )[0]
 
-        # Pobierz dostępne strony dla wybranego zainteresowania
+        # Get available websites for the selected interest
         available_sites = WEBSITE_DATABASE.get(selected_interest, [])
         if available_sites:
             return random.choice(available_sites)
@@ -111,7 +113,7 @@ class Antenna:
 
     def _log_activity(self, agent_id: int, agent_name: str, website_url: str, duration_ticks: int):
         """
-        Zapisuje log aktywności internetowej do pliku.
+        Log internet activity to a file.
         """
         log_entry = {
             "timestamp": datetime.datetime.now().isoformat(),
@@ -126,16 +128,88 @@ class Antenna:
             with open(FULL_GLOBAL_LOG_PATH, 'a') as f:
                 f.write(json.dumps(log_entry) + '\n')
 
-    def connect_agent(self, agent_id: int):
-        """Dodaje agenta do listy aktywnych połączeń"""
+    def connect_agent(self, agent_id: int, agent_name: str = None, devices: list = None):
+        """
+        Add agent to the list of active connections and log device information.
+
+        Args:
+            agent_id: Agent ID
+            agent_name: Agent name
+            devices: List of agent's ICT devices
+        """
         self.active_connections.add(agent_id)
 
+        # Store device information
+        if devices:
+            # Generate unique IP address for this connection
+            ip_address = self._generate_ip_address(agent_id)
+
+            device_info = {
+                "agent_id": agent_id,
+                "agent_name": agent_name,
+                "ip_address": ip_address,
+                "devices": [
+                    {
+                        "device_name": device.name,
+                        "device_type": device.device_type.value,
+                        "device_id": f"{agent_id}_{device.device_type.value}",
+                    }
+                    for device in devices if device.device_type.value != "none"
+                ]
+            }
+            self.connected_devices[agent_id] = device_info
+
+            # Log the connection
+            self._log_device_connection(agent_id, "connect", device_info)
+
     def disconnect_agent(self, agent_id: int):
-        """Usuwa agenta z listy aktywnych połączeń"""
+        """Remove agent from the list of active connections and log disconnection"""
         self.active_connections.discard(agent_id)
 
+        # Log disconnection if device info exists
+        if agent_id in self.connected_devices:
+            device_info = self.connected_devices[agent_id]
+            self._log_device_connection(agent_id, "disconnect", device_info)
+            del self.connected_devices[agent_id]
+
+    def _generate_ip_address(self, agent_id: int) -> str:
+        """Generate a unique IP address for the agent"""
+        # Simple IP generation based on antenna ID and agent ID
+        octet1 = 10  # Private IP range
+        octet2 = (self.id // 256) % 256
+        octet3 = self.id % 256
+        octet4 = agent_id % 254 + 1
+        return f"{octet1}.{octet2}.{octet3}.{octet4}"
+
+    def _log_device_connection(self, agent_id: int, action: str, device_info: dict):
+        """
+        Log device connection/disconnection to the antenna.
+
+        Args:
+            agent_id: Agent ID
+            action: "connect" or "disconnect"
+            device_info: Information about agent's devices
+        """
+        log_entry = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "action": action,
+            "antenna_id": self.id,
+            "antenna_position": {
+                "x": self.position["x"],
+                "y": self.position["y"]
+            },
+            "agent_id": agent_id,
+            "agent_name": device_info.get("agent_name"),
+            "ip_address": device_info.get("ip_address"),
+            "devices": device_info.get("devices", [])
+        }
+
+        with device_connection_lock:
+            with open(FULL_DEVICE_CONNECTION_LOG_PATH, 'a') as f:
+                f.write(json.dumps(log_entry) + '\n')
+
     def to_dict(self):
-        """Zwraca reprezentację anteny w formie słownika."""
+        """Return the antenna representation as a dictionary."""
         return {
             "id": self.id,
             "category": self.category,
@@ -145,8 +219,8 @@ class Antenna:
 
 def _generate_antennas_grid(min_x, max_x, min_y, max_y, antenna_range):
     """
-    Generuje listę obiektów Antenna rozmieszczonych równomiernie w siatce,
-    tak aby pokryć cały zadany obszar.
+    Generate a list of Antenna objects evenly distributed in a grid
+    to cover the entire specified area.
     """
     antennas = []
     antenna_id_counter = 1
@@ -174,9 +248,9 @@ def _generate_antennas_grid(min_x, max_x, min_y, max_y, antenna_range):
     
     return antennas
 
-# Globalna lista anten, zawierająca obiekty Antenna
+# Global list of antennas containing Antenna objects
 ANTENNAS = _generate_antennas_grid(MIN_X, MAX_X, MIN_Y, MAX_Y, ANTENNA_RANGE)
 
-print(f"[{__name__}] Wygenerowano {len(ANTENNAS)} obiektów Antena pokrywających mapę.")
+print(f"[{__name__}] Generated {len(ANTENNAS)} Antenna objects covering the map.")
 
-print(ANTENNAS[0].to_dict())  # Przykładowe wyświetlenie pierwszej anteny
+print(ANTENNAS[0].to_dict())  # Example display of the first antenna

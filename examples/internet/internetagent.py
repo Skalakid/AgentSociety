@@ -9,6 +9,7 @@ from agentsociety.cityagent import SocietyAgent
 from utils.antennas import ANTENNAS
 from utils.websites import WEBSITE_DATABASE
 from utils.prompts import CUSTOM_DETAILED_PLAN_PROMPT
+from utils.ict_devices import assign_devices_to_agent, get_device_awareness_text, ICTDevice
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,15 @@ class InternetAgent(SocietyAgent):
         self.interests = self._assign_interests()
         self.known_websites = self._generate_initial_websites()
         self.last_xy_position = None  # Track last position for comparison
+        self.ict_devices: list[ICTDevice] = []  # Will be populated after memory is initialized
 
         print(f"$ANTENA$ - {self.name} initialized with interests: {self.interests} and {len(self.known_websites)} known websites.")
 
     async def forward(self):
+        # Initialize ICT devices on first run (after memory is available)
+        if not self.ict_devices:
+            await self._initialize_ict_devices()
+
         # Get current position before parent forward to check antenna connectivity
         current_position = await self.memory.status.get("position")
         current_xy = current_position.get("xy_position") if current_position else None
@@ -54,15 +60,31 @@ class InternetAgent(SocietyAgent):
                 await self.connect_to_nearest_antenna(current_xy)
                 self.last_xy_position = {"x": current_xy["x"], "y": current_xy["y"]}
 
-        # Update internet connectivity status in memory so the agent knows during decision making
+        # Update internet connectivity and device awareness in memory
         has_internet = self.connected_antenna is not None
         await self.memory.status.update("has_internet", has_internet)
+
+        # Update device awareness text so agent knows what devices they have and can use
+        device_awareness = get_device_awareness_text(self.ict_devices, has_internet)
+        await self.memory.status.update("ict_devices", device_awareness)
 
         duration = await super().forward()
 
         # TODO: Handle website browsing
         # await self._handle_website_browsing(duration)
         return duration
+
+    async def _initialize_ict_devices(self):
+        """Initialize ICT devices based on agent demographics"""
+        # Get agent demographics from memory
+        age = await self.memory.status.get("age", default_value=30)
+        occupation = await self.memory.status.get("occupation", default_value="Other")
+
+        # Assign devices based on demographics
+        self.ict_devices = assign_devices_to_agent(age, occupation)
+
+        device_names = [d.name for d in self.ict_devices if d.device_type.value != "none"]
+        print(f"$ANTENA$ - {self.name} owns ICT devices: {', '.join(device_names) if device_names else 'none'}")
 
     async def _handle_website_browsing(self, duration: int):
         """Handle website browsing logic"""
@@ -124,7 +146,12 @@ class InternetAgent(SocietyAgent):
 
         if nearest_antenna:
             self.connected_antenna = nearest_antenna
-            nearest_antenna.connect_agent(self.id)
+            # Pass device information when connecting
+            nearest_antenna.connect_agent(
+                agent_id=self.id,
+                agent_name=self.name,
+                devices=self.ict_devices
+            )
             print(f"$ANTENA$ - {self.name} connected to antenna {nearest_antenna.id} at position {position}")
             logger.info(f"{self.name} connected to antenna {nearest_antenna.id} - {position}")
         else:

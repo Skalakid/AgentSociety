@@ -123,6 +123,12 @@ class BlockDispatcher:
                 tools=[function_schema],
                 tool_choice={"type": "function", "function": {"name": "select_block"}},
             )
+
+            # Check if response has the expected structure
+            if not response.choices or not response.choices[0].message.tool_calls:
+                get_logger().warning("LLM response missing tool_calls")
+                return None
+
             function_args: Any = json_repair.loads(
                 response.choices[0].message.tool_calls[0].function.arguments
             )

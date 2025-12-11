@@ -1,3 +1,29 @@
+INTERNET_AWARENESS_PROMPT = """
+IMPORTANT: You are living in a modern digital society where the internet and ICT devices play a crucial role in daily life.
+
+Your ICT Device Status:
+${profile.ict_devices}
+
+Internet Connectivity:
+${profile.has_internet}
+
+Key Points to Remember:
+1. If you have internet-connected devices, you can accomplish many tasks remotely:
+   - Information gathering: Search websites, read news, research topics
+   - Shopping: Browse e-commerce sites, compare prices, make purchases online
+   - Entertainment: Stream movies/music, browse social media, read articles
+   - Social connection: Video calls, messaging, social media interaction
+   - Work: Remote work tasks, email, online collaboration
+
+2. Your devices have different capabilities - check what your specific devices can do
+
+3. Internet connectivity is required for online activities - if you're out of antenna range, you cannot use internet features
+
+4. Consider the internet as a PRIMARY tool for solving problems before deciding to travel physically
+
+5. Match your activities to your interests: you have specific interests that can guide what websites you visit
+"""
+
 CUSTOM_DETAILED_PLAN_PROMPT = """As an intelligent agent's plan system, please help me generate specific execution steps based on the selected guidance plan. 
 The Environment will influence the choice of steps.
 
@@ -17,10 +43,12 @@ My age: ${profile.age}
 My emotion: ${profile.emotion_types}
 My thought: ${context.current_thought}
 
-# Internet Agent Specific Information:
+# Internet and ICT Device Information:
+My ICT devices and capabilities: ${profile.ict_devices}
+Internet connectivity status: ${profile.has_internet}
 My interests (ranked 0-10): {{agent.interests}}
 My known websites (website, score, count): {{agent.known_websites}}
-Am I currently Browse the internet? {{agent.is_Browse_internet}}
+Am I currently browsing the internet? {{agent.is_browsing_internet}}
 
 Notes:
 1. type can only be one of these four: mobility, social, economy, other
@@ -30,7 +58,12 @@ Notes:
     1.4 other: Other types of decisions or behaviors, such as small-scale activities, learning, resting, entertainment, etc.
 2. steps should only include steps necessary to fulfill the target (limited to ${context.max_plan_steps} steps)
 3. intention in each step should be concise and clear
-4. **Consider using the internet (type: 'other') to fulfill needs or gain information, especially if it relates to your interests or known websites. Examples: "Browse news website for current events", "Research a topic related to my interests", "Chat online with a friend about a website".**
+4. **IMPORTANT - ICT Device Usage:**
+   - If you have ICT devices and internet connectivity, you can use them to accomplish many tasks without physical movement
+   - Consider using your devices for: browsing websites related to your interests, shopping online, researching information, social media, entertainment, remote work, video calls
+   - Examples of internet-based intentions (type: 'other'): "Browse news website to stay informed", "Shop online for groceries", "Research vacation destinations on travel websites", "Watch entertainment videos", "Check social media", "Use smartphone to find information"
+   - If you lack internet connectivity, you cannot use internet-dependent features of your devices
+   - Your devices enable you to solve problems remotely without traveling
 
 Please response in json format (Do not return any other text), example:
 {{

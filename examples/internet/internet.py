@@ -1,7 +1,7 @@
 import asyncio
 
 import copy
-from agentsociety.cityagent import default, memory_config_societyagent, DEFAULT_DISTRIBUTIONS
+from agentsociety.cityagent import default, DEFAULT_DISTRIBUTIONS
 from agentsociety.cityagent.blocks.economy_block import EconomyBlock, EconomyBlockParams
 from agentsociety.cityagent.blocks.mobility_block import MobilityBlock, MobilityBlockParams
 from agentsociety.cityagent.blocks.other_block import OtherBlock, OtherBlockParams
@@ -21,6 +21,7 @@ from agentsociety.llm import LLMProviderType
 from agentsociety.simulation import AgentSociety
 from agentsociety.storage import DatabaseConfig
 from internetagent import InternetAgent
+from internet_memory_config import memory_config_internetagent
 
 config = Config(
     llm=[
@@ -46,8 +47,8 @@ config = Config(
         citizens=[
             AgentConfig(
                 agent_class=InternetAgent,
-                number=10,
-                memory_config_func=copy.deepcopy(memory_config_societyagent),
+                number=100,
+                memory_config_func=memory_config_internetagent,  # Use custom memory config with ICT device fields
                 memory_distributions=copy.deepcopy(DEFAULT_DISTRIBUTIONS),
                 blocks={
                     MobilityBlock: MobilityBlockParams(),
