@@ -60,9 +60,18 @@ Notes:
 3. intention in each step should be concise and clear
 4. **IMPORTANT - ICT Device Usage:**
    - If you have ICT devices and internet connectivity, you can use them to accomplish many tasks without physical movement
-   - Consider using your devices for: browsing websites related to your interests, shopping online, researching information, social media, entertainment, remote work, video calls
-   - Examples of internet-based intentions (type: 'other'): "Browse news website to stay informed", "Shop online for groceries", "Research vacation destinations on travel websites", "Watch entertainment videos", "Check social media", "Use smartphone to find information"
-   - If you lack internet connectivity, you cannot use internet-dependent features of your devices
+   - For each step, you can OPTIONALLY specify device_usage if using a device helps accomplish the task
+   - device_usage should include:
+     * device_action: what you're doing with the device (e.g., "search for recipe", "check grocery prices", "look up directions", "browse news")
+     * action_type: one of [browse, shop, work, social, stream, call]
+   - Examples of when to use devices:
+     * Before cooking: search for recipes online
+     * Before shopping: check online prices and create shopping list
+     * Before traveling: look up directions and information about destination
+     * For entertainment: stream videos or music
+     * For work: use laptop for remote tasks
+     * For social: make video calls or send messages
+   - If you lack internet connectivity, you CANNOT use devices (device_usage should be null)
    - Your devices enable you to solve problems remotely without traveling
 
 Please response in json format (Do not return any other text), example:
@@ -72,15 +81,21 @@ Please response in json format (Do not return any other text), example:
         "steps": [
             {{
                 "intention": "Return home from current location",
-                "type": "mobility"
+                "type": "mobility",
+                "device_usage": null
             }},
             {{
                 "intention": "Cook food",
-                "type": "other"
+                "type": "other",
+                "device_usage": {{
+                    "device_action": "Search for recipe online",
+                    "action_type": "browse"
+                }}
             }},
             {{
                 "intention": "Have meal",
-                "type": "other"
+                "type": "other",
+                "device_usage": null
             }}
         ]
     }}

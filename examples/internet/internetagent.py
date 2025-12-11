@@ -10,20 +10,25 @@ from utils.antennas import ANTENNAS
 from utils.websites import WEBSITE_DATABASE
 from utils.prompts import CUSTOM_DETAILED_PLAN_PROMPT
 from utils.ict_devices import assign_devices_to_agent, get_device_awareness_text, ICTDevice
+from utils.device_logger import log_device_usage, log_internet_browsing
 
 logger = logging.getLogger(__name__)
 
 class InternetAgent(SocietyAgent):
     def __init__(self, id: int, name: str, toolbox, memory, agent_params=None, blocks=None):
+        # Override the plan generation prompt with our custom one that includes device_usage
+        if agent_params:
+            agent_params.plan_generation_prompt = CUSTOM_DETAILED_PLAN_PROMPT
+
         super().__init__(
-            id=id, 
-            name=name, 
-            toolbox=toolbox, 
+            id=id,
+            name=name,
+            toolbox=toolbox,
             memory=memory,
             agent_params=agent_params,
             blocks=blocks
         )
-        
+
         self.last_position = None
         self.connected_antenna = None
         self.name = name
@@ -70,9 +75,50 @@ class InternetAgent(SocietyAgent):
 
         duration = await super().forward()
 
-        # TODO: Handle website browsing
-        # await self._handle_website_browsing(duration)
         return duration
+
+    async def step_execution(self):
+        """Override step execution to handle device usage before executing the step"""
+        current_plan = await self.memory.status.get("current_plan")
+        if (
+            current_plan is None
+            or not current_plan
+            or len(current_plan.get("steps", [])) == 0
+        ):
+            return  # No plan, no execution
+
+        step_index = current_plan.get("index", 0)
+        current_step = current_plan.get("steps", [])[step_index]
+
+        # Debug: Log current step to see if device_usage is present
+        if current_step:
+            print(f"$DEBUG$ - {self.name} executing step: {current_step.get('intention', 'Unknown')}")
+            if "device_usage" in current_step:
+                print(f"$DEBUG$ - Device usage field present: {current_step['device_usage']}")
+            else:
+                print(f"$DEBUG$ - No device_usage field in step {current_step}")
+
+        # Check if current step includes device usage
+        if current_step and "device_usage" in current_step and current_step["device_usage"]:
+            device_usage = current_step["device_usage"]
+
+            # Log device usage if internet is available
+            if self.connected_antenna:
+                self.log_device_action(
+                    task_type=device_usage.get("action_type", "browse"),
+                    action_description=device_usage.get("device_action", "Use device for task"),
+                    task_target=current_step.get("intention", "Unknown task"),
+                    metadata={
+                        "step_type": current_step.get("type", "other"),
+                        "step_index": step_index,
+                        "plan_target": current_plan.get("target", "Unknown")
+                    }
+                )
+            else:
+                print(f"$DEVICE$ - {self.name} planned to use device for '{current_step.get('intention')}' but has no internet")
+
+        # Call parent step execution to actually execute the step
+        await super().step_execution()
 
     async def _initialize_ict_devices(self):
         """Initialize ICT devices based on agent demographics"""
@@ -85,6 +131,73 @@ class InternetAgent(SocietyAgent):
 
         device_names = [d.name for d in self.ict_devices if d.device_type.value != "none"]
         print(f"$ANTENA$ - {self.name} owns ICT devices: {', '.join(device_names) if device_names else 'none'}")
+
+    def _select_device_for_task(self, task_type: str) -> ICTDevice:
+        """
+        Select the most appropriate device for a given task type.
+
+        Args:
+            task_type: Type of task (browse, shop, work, stream, social, call)
+
+        Returns:
+            The selected device, or None device if no suitable device available
+        """
+        # Filter devices that can perform this task
+        capable_devices = [d for d in self.ict_devices if d.can_perform_task(task_type)]
+
+        if not capable_devices:
+            return None
+
+        # Preference order: smartphone (most portable), laptop, tablet, desktop
+        preference_order = ["smartphone", "laptop", "tablet", "desktop"]
+
+        for device_type in preference_order:
+            for device in capable_devices:
+                if device.device_type.value == device_type:
+                    return device
+
+        # Fallback to first capable device
+        return capable_devices[0]
+
+    def log_device_action(self, task_type: str, action_description: str, task_target: str = None, metadata: dict = None):
+        """
+        Log that the agent used a device to perform an action.
+
+        Args:
+            task_type: Type of task (browse, shop, work, stream, social, call)
+            action_description: What the agent did
+            task_target: What task was being solved
+            metadata: Additional information
+        """
+        # Check if agent has internet
+        if not self.connected_antenna:
+            print(f"$DEVICE$ - {self.name} tried to use device but has no internet connection")
+            return
+
+        # Select appropriate device
+        device = self._select_device_for_task(task_type)
+
+        if not device or device.device_type.value == "none":
+            print(f"$DEVICE$ - {self.name} has no device capable of task: {task_type}")
+            return
+
+        device_id = f"{self.id}_{device.device_type.value}"
+
+        # Log the device usage
+        log_device_usage(
+            agent_id=self.id,
+            agent_name=self.name,
+            device_id=device_id,
+            device_type=device.device_type.value,
+            device_name=device.name,
+            action_type=task_type,
+            action_description=action_description,
+            task_target=task_target,
+            success=True,
+            metadata=metadata or {}
+        )
+
+        print(f"$DEVICE$ - {self.name} used {device.name} to: {action_description}")
 
     async def _handle_website_browsing(self, duration: int):
         """Handle website browsing logic"""
@@ -125,6 +238,14 @@ class InternetAgent(SocietyAgent):
             self.browsing_duration = 0
             self.expected_duration = duration
             print(f"$ANTENA$ - {self.name} started browsing {website}")
+
+            # Log the device usage for browsing
+            self.log_device_action(
+                task_type="browse",
+                action_description=f"Browse {website}",
+                task_target="Access information online",
+                metadata={"website": website, "expected_duration": duration}
+            )
 
     async def _stop_browsing(self):
         """

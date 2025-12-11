@@ -17,6 +17,7 @@ ANTENNA_RANGE = 5000.0
 # --- Global path to internet log file ---
 GLOBAL_INTERNET_LOG_FILE = "all_internet_activity_logs.jsonl"
 GLOBAL_DEVICE_CONNECTION_LOG_FILE = "antenna_device_connections.jsonl"
+GLOBAL_DEVICE_USAGE_LOG_FILE = "device_usage_logs.jsonl"
 GLOBAL_LOG_DIR = "internet_logs"
 
 # Ensure the log directory exists
@@ -25,10 +26,12 @@ os.makedirs(GLOBAL_LOG_DIR, exist_ok=True)
 # Full paths to log files
 FULL_GLOBAL_LOG_PATH = os.path.join(GLOBAL_LOG_DIR, GLOBAL_INTERNET_LOG_FILE)
 FULL_DEVICE_CONNECTION_LOG_PATH = os.path.join(GLOBAL_LOG_DIR, GLOBAL_DEVICE_CONNECTION_LOG_FILE)
+FULL_DEVICE_USAGE_LOG_PATH = os.path.join(GLOBAL_LOG_DIR, GLOBAL_DEVICE_USAGE_LOG_FILE)
 
 # Create locks for thread-safe file writing
 log_file_lock = threading.Lock()
 device_connection_lock = threading.Lock()
+device_usage_lock = threading.Lock()
 
 class Antenna:
     def __init__(self, id: int, position: dict, range: float):
