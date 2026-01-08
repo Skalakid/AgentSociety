@@ -21,7 +21,8 @@ def log_device_usage(
     action_description: str,
     task_target: Optional[str] = None,
     success: bool = True,
-    metadata: Optional[dict] = None
+    metadata: Optional[dict] = None,
+    website: Optional[str] = None
 ):
     """
     Log when an agent uses a device to solve a task or perform an action.
@@ -37,6 +38,7 @@ def log_device_usage(
         task_target: Optional - what task was being solved (e.g., "Find restaurant information")
         success: Whether the action was successful
         metadata: Optional additional metadata (e.g., website visited, time spent, etc.)
+        website: Optional - specific website visited during this action
     """
     log_entry = {
         "timestamp": datetime.datetime.now().isoformat(),
@@ -49,8 +51,17 @@ def log_device_usage(
         "action_description": action_description,
         "task_target": task_target,
         "success": success,
-        "metadata": metadata or {}
     }
+    
+    # Add website as a top-level field if provided
+    if website:
+        log_entry["website"] = website
+    
+    # Add metadata last
+    if metadata:
+        log_entry["metadata"] = metadata
+    else:
+        log_entry["metadata"] = {}
 
     with device_usage_lock:
         with open(FULL_DEVICE_USAGE_LOG_PATH, 'a') as f:

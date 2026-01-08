@@ -104,7 +104,7 @@ class InternetAgent(SocietyAgent):
 
             # Log device usage if internet is available
             if self.connected_antenna:
-                self.log_device_action(
+                await self.log_device_action(
                     task_type=device_usage.get("action_type", "browse"),
                     action_description=device_usage.get("device_action", "Use device for task"),
                     task_target=current_step.get("intention", "Unknown task"),
@@ -159,7 +159,89 @@ class InternetAgent(SocietyAgent):
         # Fallback to first capable device
         return capable_devices[0]
 
-    def log_device_action(self, task_type: str, action_description: str, task_target: str = None, metadata: dict = None):
+    async def _select_website_for_task(self, task_type: str, action_description: str = "") -> str:
+        """
+        Use LLM to select an appropriate website based on task type and action description.
+        
+        Args:
+            task_type: Type of task (browse, shop, work, stream, social, call)
+            action_description: Specific description of what the agent is doing
+            
+        Returns:
+            Website URL or generic fallback
+        """
+        # Build context from agent's known websites
+        known_websites_context = ""
+        if self.known_websites and len(self.known_websites) > 0:
+            top_sites = sorted(self.known_websites, key=lambda x: x.get('score', 0), reverse=True)[:5]
+            sites_list = [f"{w['website']} (visited {w.get('count', 1)} times)" for w in top_sites]
+            known_websites_context = f"\n\nAgent's frequently visited websites:\n" + "\n".join(f"- {s}" for s in sites_list)
+        
+        # Build interests context
+        interests_context = ""
+        if self.interests:
+            top_interests = sorted(self.interests.items(), key=lambda x: x[1], reverse=True)[:3]
+            interests_context = f"\n\nAgent's main interests: {', '.join(f'{k} ({v}/10)' for k, v in top_interests)}"
+        
+        prompt = f"""You are selecting a realistic website that an agent would visit for a specific action.
+
+Action type: {task_type}
+Action description: {action_description}{known_websites_context}{interests_context}
+
+Based on the action description, return ONE realistic website URL (domain only, no http://) that the agent would visit.
+
+Rules:
+1. Be specific and realistic - match the exact action (e.g., "check email" → gmail.com or outlook.com, not news sites)
+2. Prefer popular, well-known websites that actually exist
+3. Consider the agent's known websites and interests when choosing
+4. Return ONLY the domain (e.g., "gmail.com" not "https://gmail.com")
+5. Make it contextually appropriate (work email → professional sites, shopping → e-commerce sites)
+
+Website:"""
+
+        try:
+            # Use LLM to select website
+            response = await self._toolbox.llm.atext_request(
+                dialog=[{"role": "user", "content": prompt}],
+                max_tokens=50,
+                temperature=0.7,  # Some randomness for variety
+            )
+            
+            # Clean up the response
+            website = response.strip().lower()
+            # Remove common prefixes/suffixes
+            website = website.replace('http://', '').replace('https://', '').replace('www.', '')
+            # Take only the domain part (remove paths)
+            if '/' in website:
+                website = website.split('/')[0]
+            # Remove any quotes or extra whitespace
+            website = website.strip('"\'').strip()
+            
+            # Basic validation - should have a dot and be reasonable length
+            if '.' in website and 3 < len(website) < 50 and ' ' not in website:
+                return website
+            
+        except Exception as e:
+            print(f"$DEVICE$ - Failed to get LLM website selection: {e}")
+        
+        # Fallback to simple defaults based on action keywords
+        action_lower = action_description.lower()
+        if 'email' in action_lower or 'mail' in action_lower:
+            return 'gmail.com'
+        elif 'shop' in action_lower or 'buy' in action_lower or 'purchase' in action_lower:
+            return 'amazon.com'
+        elif 'bank' in action_lower or 'account' in action_lower:
+            return 'online-banking.com'
+        elif 'news' in action_lower or 'weather' in action_lower:
+            return 'news.google.com'
+        elif 'video' in action_lower or 'movie' in action_lower:
+            return 'youtube.com'
+        elif 'social' in action_lower or 'post' in action_lower:
+            return 'facebook.com'
+        else:
+            return 'google.com'
+
+    async def log_device_action(self, task_type: str, action_description: str, task_target: str = None, metadata: dict = None):
         """
         Log that the agent used a device to perform an action.
 
@@ -182,8 +264,16 @@ class InternetAgent(SocietyAgent):
             return
 
         device_id = f"{self.id}_{device.device_type.value}"
+        
+        # Select an appropriate website for this task using LLM
+        website = await self._select_website_for_task(task_type, action_description)
+        
+        # Add website to metadata
+        enhanced_metadata = metadata.copy() if metadata else {}
+        if website:
+            enhanced_metadata["website_visited"] = website
 
-        # Log the device usage
+        # Log the device usage with website information
         log_device_usage(
             agent_id=self.id,
             agent_name=self.name,
@@ -194,11 +284,15 @@ class InternetAgent(SocietyAgent):
             action_description=action_description,
             task_target=task_target,
             success=True,
-            metadata=metadata or {}
+            metadata=enhanced_metadata,
+            website=website
         )
 
-        print(f"$DEVICE$ - {self.name} used {device.name} to: {action_description}")
-
+        if website:
+            print(f"$DEVICE$ - {self.name} used {device.name} to visit {website}: {action_description}")
+        else:
+            print(f"$DEVICE$ - {self.name} used {device.name} to: {action_description}")
+    
     async def _handle_website_browsing(self, duration: int):
         """Handle website browsing logic"""
         if not self.connected_antenna:
@@ -325,4 +419,5 @@ class InternetAgent(SocietyAgent):
                         "count": 1,
                         "timestamp": datetime.datetime.now().isoformat()
                     })
+        return initial_websites
         return initial_websites
