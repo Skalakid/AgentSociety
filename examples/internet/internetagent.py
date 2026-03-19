@@ -104,16 +104,28 @@ class InternetAgent(SocietyAgent):
 
             # Log device usage if internet is available
             if self.connected_antenna:
-                await self.log_device_action(
-                    task_type=device_usage.get("action_type", "browse"),
-                    action_description=device_usage.get("device_action", "Use device for task"),
-                    task_target=current_step.get("intention", "Unknown task"),
-                    metadata={
-                        "step_type": current_step.get("type", "other"),
-                        "step_index": step_index,
-                        "plan_target": current_plan.get("target", "Unknown")
-                    }
-                )
+                try:
+                    action_type = device_usage.get("action_type", "browse")
+                    if isinstance(action_type, list):
+                        action_type = action_type[0] if action_type else None
+                    if not isinstance(action_type, str):
+                        action_type = None
+                except Exception:
+                    action_type = None
+
+                if action_type:
+                    await self.log_device_action(
+                        task_type=action_type,
+                        action_description=device_usage.get("device_action", "Use device for task"),
+                        task_target=current_step.get("intention", "Unknown task"),
+                        metadata={
+                            "step_type": current_step.get("type", "other"),
+                            "step_index": step_index,
+                            "plan_target": current_plan.get("target", "Unknown")
+                        }
+                    )
+                else:
+                    print(f"$DEVICE$ - {self.name} skipping device action: unexpected action_type format: {device_usage.get('action_type')}")
             else:
                 print(f"$DEVICE$ - {self.name} planned to use device for '{current_step.get('intention')}' but has no internet")
 
