@@ -7,6 +7,7 @@ import math
 from agentsociety.agent import CitizenAgentBase
 from agentsociety.cityagent import SocietyAgent
 from utils.antennas import ANTENNAS
+from utils.home_wifi import get_or_create_home_router, HOME_AT_DISTANCE
 from utils.websites import WEBSITE_DATABASE
 from utils.prompts import CUSTOM_DETAILED_PLAN_PROMPT
 from utils.ict_devices import assign_devices_to_agent, get_device_awareness_text, ICTDevice
@@ -41,6 +42,10 @@ class InternetAgent(SocietyAgent):
         self.last_xy_position = None  # Track last position for comparison
         self.ict_devices: list[ICTDevice] = []  # Will be populated after memory is initialized
 
+        self.home_router = None       # HomeRouter instance for this agent's home
+        self.home_xy = None           # Captured on first connection (= starting/home position)
+        self.home_leased_ips: dict[str, str] = {}  # device_id -> ip when on home WiFi
+
         print(f"$ANTENA$ - {self.name} initialized with interests: {self.interests} and {len(self.known_websites)} known websites.")
 
     async def forward(self):
@@ -66,7 +71,7 @@ class InternetAgent(SocietyAgent):
                 self.last_xy_position = {"x": current_xy["x"], "y": current_xy["y"]}
 
         # Update internet connectivity and device awareness in memory
-        has_internet = self.connected_antenna is not None
+        has_internet = self.connected_antenna is not None or bool(self.home_leased_ips)
         await self.memory.status.update("has_internet", has_internet)
 
         # Update device awareness text so agent knows what devices they have and can use
@@ -103,7 +108,7 @@ class InternetAgent(SocietyAgent):
             device_usage = current_step["device_usage"]
 
             # Log device usage if internet is available
-            if self.connected_antenna:
+            if self.connected_antenna or self.home_leased_ips:
                 try:
                     action_type = device_usage.get("action_type", "browse")
                     if isinstance(action_type, list):
@@ -143,6 +148,17 @@ class InternetAgent(SocietyAgent):
 
         device_names = [d.name for d in self.ict_devices if d.device_type.value != "none"]
         print(f"$ANTENA$ - {self.name} owns ICT devices: {', '.join(device_names) if device_names else 'none'}")
+
+        # Initialize home router based on home AOI
+        try:
+            home_data = await self.memory.status.get("home")
+            if home_data:
+                aoi_id = home_data.get("aoi_position", {}).get("aoi_id")
+                if aoi_id is not None:
+                    self.home_router = get_or_create_home_router(aoi_id)
+                    print(f"$ANTENA$ - {self.name} home router: subnet {self.home_router.subnet_prefix}")
+        except Exception as e:
+            print(f"$ANTENA$ - {self.name} could not initialize home router: {e}")
 
     def _select_device_for_task(self, task_type: str) -> ICTDevice:
         """
@@ -263,8 +279,8 @@ Website:"""
             task_target: What task was being solved
             metadata: Additional information
         """
-        # Check if agent has internet
-        if not self.connected_antenna:
+        # Check if agent has internet (antenna or home WiFi)
+        if not self.connected_antenna and not self.home_leased_ips:
             print(f"$DEVICE$ - {self.name} tried to use device but has no internet connection")
             return
 
@@ -276,7 +292,7 @@ Website:"""
             return
 
         device_id = f"{self.id}_{device.device_type.value}"
-        
+
         # Select an appropriate website for this task using LLM
         website = await self._select_website_for_task(task_type, action_description)
         
@@ -297,7 +313,7 @@ Website:"""
             task_target=task_target,
             success=True,
             metadata=enhanced_metadata,
-            website=website
+            website=website,
         )
 
         if website:
@@ -364,26 +380,64 @@ Website:"""
             self.browsing_duration = 0
             self.expected_duration = 0
 
-    async def connect_to_nearest_antenna(self, position: dict):
-        nearest_antenna = await self.get_nearest_antenna(position, 10000.0)
-        # Disconnect from previous antenna if exists
-        if self.connected_antenna:
-            self.connected_antenna.disconnect_agent(self.id)
-            self.connected_antenna = None
+    def _is_at_home(self, position: dict) -> bool:
+        if self.home_xy is None or self.home_router is None:
+            return False
+        dx = position["x"] - self.home_xy["x"]
+        dy = position["y"] - self.home_xy["y"]
+        return (dx * dx + dy * dy) ** 0.5 < HOME_AT_DISTANCE
 
-        if nearest_antenna:
-            self.connected_antenna = nearest_antenna
-            # Pass device information when connecting
-            nearest_antenna.connect_agent(
-                agent_id=self.id,
-                agent_name=self.name,
-                devices=self.ict_devices
-            )
-            print(f"$ANTENA$ - {self.name} connected to antenna {nearest_antenna.id} at position {position}")
-            logger.info(f"{self.name} connected to antenna {nearest_antenna.id} - {position}")
+    async def connect_to_nearest_antenna(self, position: dict):
+        # Capture home position on first call (agents start at home)
+        if self.home_xy is None:
+            self.home_xy = {"x": position["x"], "y": position["y"]}
+
+        at_home = self._is_at_home(position)
+
+        if at_home:
+            # Disconnect from antenna if was connected
+            if self.connected_antenna:
+                self.connected_antenna.disconnect_agent(self.id)
+                self.connected_antenna = None
+
+            # Connect to home router if not already connected
+            if self.home_router and not self.home_leased_ips:
+                self.home_leased_ips = self.home_router.connect_devices(
+                    agent_id=self.id,
+                    agent_name=self.name,
+                    devices=self.ict_devices,
+                )
+                print(f"$ANTENA$ - {self.name} connected to home WiFi ({self.home_router.subnet_prefix})")
         else:
-            print(f"$ANTENA$ - {self.name} is out of range of any antenna at position {position}")
-            logger.warning(f"{self.name} is out of range of any antenna - {position}")
+            # Disconnect from home router if was connected
+            if self.home_router and self.home_leased_ips:
+                self.home_router.disconnect_devices(
+                    agent_id=self.id,
+                    agent_name=self.name,
+                    devices=self.ict_devices,
+                    leased_ips=self.home_leased_ips,
+                )
+                self.home_leased_ips = {}
+                print(f"$ANTENA$ - {self.name} disconnected from home WiFi")
+
+            # Disconnect from previous antenna
+            if self.connected_antenna:
+                self.connected_antenna.disconnect_agent(self.id)
+                self.connected_antenna = None
+
+            nearest_antenna = await self.get_nearest_antenna(position, 10000.0)
+            if nearest_antenna:
+                self.connected_antenna = nearest_antenna
+                nearest_antenna.connect_agent(
+                    agent_id=self.id,
+                    agent_name=self.name,
+                    devices=self.ict_devices,
+                )
+                print(f"$ANTENA$ - {self.name} connected to antenna {nearest_antenna.id} at position {position}")
+                logger.info(f"{self.name} connected to antenna {nearest_antenna.id} - {position}")
+            else:
+                print(f"$ANTENA$ - {self.name} is out of range of any antenna at position {position}")
+                logger.warning(f"{self.name} is out of range of any antenna - {position}")
 
     async def get_nearest_antenna(self, agent_position: dict, range_meters: float):
         nearest = min(ANTENNAS, key=lambda a: self._distance(agent_position, a.position))

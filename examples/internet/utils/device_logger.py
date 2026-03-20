@@ -22,7 +22,7 @@ def log_device_usage(
     task_target: Optional[str] = None,
     success: bool = True,
     metadata: Optional[dict] = None,
-    website: Optional[str] = None
+    website: Optional[str] = None,
 ):
     """
     Log when an agent uses a device to solve a task or perform an action.
@@ -53,7 +53,6 @@ def log_device_usage(
         "success": success,
     }
     
-    # Add website as a top-level field if provided
     if website:
         log_entry["website"] = website
     

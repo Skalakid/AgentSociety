@@ -34,21 +34,27 @@ device_connection_lock = threading.Lock()
 device_usage_lock = threading.Lock()
 
 class Antenna:
-    def __init__(self, id: int, position: dict, range: float):
+    def __init__(self, id: int, position: dict, antenna_range: float):
         """
         Initialize an Antenna object.
 
         Args:
             id (int): Unique antenna identifier.
             position (dict): Dictionary with 'x' and 'y' keys representing the antenna's position.
-            range (float): Operating range of the antenna in meters.
+            antenna_range (float): Operating range of the antenna in meters.
         """
         self.id = id
         self.category = "antenna"
         self.position = position
-        self.range = range
+        self.range = antenna_range
         self.active_connections = set()  # Set of agent IDs currently connected
         self.connected_devices = {}  # Dict mapping agent_id to device info
+        # DHCP pool: 10.<antenna>.x.1-254
+        self._ip_pool: set[str] = {
+            f"10.{(self.id // 256) % 256}.{self.id % 256}.{i}" for i in range(1, 255)
+        }
+        self._active_leases: dict[str, dict] = {}
+        self._pool_lock = threading.Lock()
 
     def is_within_range(self, agent_position: dict) -> bool:
         """
@@ -150,7 +156,7 @@ class Antenna:
                 if device.device_type.value != "none":
                     # Generate unique IP address for this device
                     device_id = f"{agent_id}_{device.device_type.value}"
-                    ip_address = self._generate_ip_address_for_device(agent_id, device.device_type.value)
+                    ip_address = self._lease_ip(agent_id, device_id)
 
                     device_connection = {
                         "agent_id": agent_id,
@@ -177,7 +183,30 @@ class Antenna:
             device_connections = self.connected_devices[agent_id]
             for device_connection in device_connections:
                 self._log_device_connection(agent_id, "disconnect", device_connection)
+                ip = device_connection.get("ip_address")
+                if ip:
+                    self._release_ip(ip)
             del self.connected_devices[agent_id]
+
+    def _lease_ip(self, agent_id: int, device_id: str) -> Optional[str]:
+        """Lease an IP from the DHCP pool. Returns None if pool is exhausted."""
+        with self._pool_lock:
+            if not self._ip_pool:
+                return None
+            ip = self._ip_pool.pop()
+            self._active_leases[ip] = {
+                "agent_id": agent_id,
+                "device_id": device_id,
+                "leased_at": datetime.datetime.now().isoformat(),
+            }
+            return ip
+
+    def _release_ip(self, ip: str):
+        """Return a leased IP back to the pool."""
+        with self._pool_lock:
+            if ip in self._active_leases:
+                del self._active_leases[ip]
+                self._ip_pool.add(ip)
 
     def _generate_ip_address_for_device(self, agent_id: int, device_type: str) -> str:
         """Generate a unique IP address for a specific device"""
@@ -209,6 +238,7 @@ class Antenna:
         log_entry = {
             "timestamp": datetime.datetime.now().isoformat(),
             "action": action,
+            "network_type": "antenna",
             "antenna_id": self.id,
             "antenna_position": {
                 "x": self.position["x"],
@@ -257,7 +287,7 @@ def _generate_antennas_grid(min_x, max_x, min_y, max_y, antenna_range):
                 Antenna(
                     id=antenna_id_counter,
                     position={"x": current_x, "y": current_y},
-                    range=antenna_range
+                    antenna_range=antenna_range
                 )
             )
             antenna_id_counter += 1
