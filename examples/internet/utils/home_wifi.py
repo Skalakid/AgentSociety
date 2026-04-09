@@ -27,7 +27,7 @@ def get_or_create_home_router(home_aoi_id: int) -> "HomeRouter":
 class HomeRouter:
     def __init__(self, home_aoi_id: int):
         self.home_aoi_id = home_aoi_id
-        self.subnet_prefix = f"192.168.{home_aoi_id % 256}.{(home_aoi_id // 256) % 256}"
+        self.subnet_prefix = f"172.16.{(home_aoi_id ^ (home_aoi_id >> 8)) % 256}"
         self._ip_pool: set[str] = {f"{self.subnet_prefix}.{i}" for i in range(1, 255)}
         self._active_leases: dict[str, dict] = {}
         self._lock = threading.Lock()
@@ -80,7 +80,6 @@ class HomeRouter:
             "action": action,
             "network_type": "home_wifi",
             "home_aoi_id": self.home_aoi_id,
-            "subnet": self.subnet_prefix,
             "agent_id": agent_id,
             "agent_name": agent_name,
             "device_name": device.name,

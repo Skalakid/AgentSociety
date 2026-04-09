@@ -3,9 +3,15 @@ ICT Device definitions for internet simulation agents.
 Devices have different capabilities and enable different types of internet usage.
 """
 
+import uuid
 from enum import Enum
 from typing import Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace as dc_replace
+
+# Set to None for cookies that live forever.
+# Set to an integer tick count to enable expiry (e.g. 86_400 for 24h of ticks).
+# This is the single place to control per-site browser ID lifetime.
+BROWSER_ID_TTL_TICKS: Optional[int] = None
 
 
 class DeviceType(Enum):
@@ -57,6 +63,27 @@ class ICTDevice:
     device_type: DeviceType
     capabilities: DeviceCapabilities
     name: str
+    # Maps site (e.g. "gmail.com") → (browser_id, tick_when_issued)
+    _site_browser_ids: dict = field(default_factory=dict)
+
+    def get_browser_id_for_site(self, site: str, current_tick: int = 0) -> str:
+        """
+        Return a stable browser ID for this (device, site) pair.
+        Creates a new UUID on first visit. If BROWSER_ID_TTL_TICKS is set
+        and the cookie has expired, regenerates it transparently.
+        """
+        if site in self._site_browser_ids:
+            browser_id, created_at = self._site_browser_ids[site]
+            if (
+                BROWSER_ID_TTL_TICKS is not None
+                and (current_tick - created_at) >= BROWSER_ID_TTL_TICKS
+            ):
+                browser_id = str(uuid.uuid4())
+                self._site_browser_ids[site] = (browser_id, current_tick)
+        else:
+            browser_id = str(uuid.uuid4())
+            self._site_browser_ids[site] = (browser_id, current_tick)
+        return browser_id
 
     def can_perform_task(self, task_type: str) -> bool:
         """Check if this device can perform a specific task type"""
@@ -171,40 +198,44 @@ def assign_devices_to_agent(age: int, occupation: str) -> list[ICTDevice]:
 
     devices = []
 
+    def _new(device_type: DeviceType) -> ICTDevice:
+        """Create a fresh ICTDevice instance with its own cookie store."""
+        return dc_replace(DEVICE_CONFIGS[device_type], _site_browser_ids={})
+
     # Almost everyone has a smartphone (95% for age 18-65)
     if age < 70 and random.random() < 0.95:
-        devices.append(DEVICE_CONFIGS[DeviceType.SMARTPHONE])
+        devices.append(_new(DeviceType.SMARTPHONE))
     elif age >= 70 and random.random() < 0.60:
-        devices.append(DEVICE_CONFIGS[DeviceType.SMARTPHONE])
+        devices.append(_new(DeviceType.SMARTPHONE))
 
     # Work-related devices
     work_occupations = ["Engineer", "Manager", "Teacher", "Doctor", "Businessman"]
     if occupation in work_occupations:
         # 80% chance of having a laptop
         if random.random() < 0.80:
-            devices.append(DEVICE_CONFIGS[DeviceType.LAPTOP])
+            devices.append(_new(DeviceType.LAPTOP))
         # 30% chance of having a desktop at home
         if random.random() < 0.30:
-            devices.append(DEVICE_CONFIGS[DeviceType.DESKTOP])
+            devices.append(_new(DeviceType.DESKTOP))
 
     # Students often have laptops
     if occupation == "Student":
         if random.random() < 0.95:
-            devices.append(DEVICE_CONFIGS[DeviceType.LAPTOP])
+            devices.append(_new(DeviceType.LAPTOP))
 
     # Artists might have tablets
     if occupation == "Artist":
         if random.random() < 0.40:
-            devices.append(DEVICE_CONFIGS[DeviceType.TABLET])
+            devices.append(_new(DeviceType.TABLET))
 
     # Some people just have desktop at home
     if not devices or (len(devices) == 1 and devices[0].device_type == DeviceType.SMARTPHONE):
         if random.random() < 0.80:
-            devices.append(DEVICE_CONFIGS[DeviceType.DESKTOP])
+            devices.append(_new(DeviceType.DESKTOP))
 
     # If no devices assigned (rare for elderly), they have no device
     if not devices:
-        devices.append(DEVICE_CONFIGS[DeviceType.NONE])
+        devices.append(_new(DeviceType.NONE))
 
     return devices
 

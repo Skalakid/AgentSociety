@@ -6,6 +6,10 @@ import threading
 import random
 from typing import Optional, Tuple
 from .websites import WEBSITE_DATABASE
+from .ip_strategies import (
+    AntennaIPStrategy,
+    SharedAntennaIPStrategy,
+)
 
 MIN_X = -30000.0  # Minimum X coordinate of the map
 MAX_X = 30000.0   # Maximum X coordinate of the map
@@ -34,7 +38,13 @@ device_connection_lock = threading.Lock()
 device_usage_lock = threading.Lock()
 
 class Antenna:
-    def __init__(self, id: int, position: dict, antenna_range: float):
+    def __init__(
+        self,
+        id: int,
+        position: dict,
+        antenna_range: float,
+        ip_strategy: Optional[AntennaIPStrategy] = None,
+    ):
         """
         Initialize an Antenna object.
 
@@ -49,12 +59,7 @@ class Antenna:
         self.range = antenna_range
         self.active_connections = set()  # Set of agent IDs currently connected
         self.connected_devices = {}  # Dict mapping agent_id to device info
-        # DHCP pool: 10.<antenna>.x.1-254
-        self._ip_pool: set[str] = {
-            f"10.{(self.id // 256) % 256}.{self.id % 256}.{i}" for i in range(1, 255)
-        }
-        self._active_leases: dict[str, dict] = {}
-        self._pool_lock = threading.Lock()
+        self.ip_strategy = ip_strategy or SharedAntennaIPStrategy()
 
     def is_within_range(self, agent_position: dict) -> bool:
         """
@@ -154,9 +159,13 @@ class Antenna:
 
             for device in devices:
                 if device.device_type.value != "none":
-                    # Generate unique IP address for this device
                     device_id = f"{agent_id}_{device.device_type.value}"
-                    ip_address = self._lease_ip(agent_id, device_id)
+                    ip_address = self.ip_strategy.get_ip(
+                        antenna_id=self.id,
+                        agent_id=agent_id,
+                        device_type=device.device_type.value,
+                        device_id=device_id,
+                    )
 
                     device_connection = {
                         "agent_id": agent_id,
@@ -183,48 +192,7 @@ class Antenna:
             device_connections = self.connected_devices[agent_id]
             for device_connection in device_connections:
                 self._log_device_connection(agent_id, "disconnect", device_connection)
-                ip = device_connection.get("ip_address")
-                if ip:
-                    self._release_ip(ip)
             del self.connected_devices[agent_id]
-
-    def _lease_ip(self, agent_id: int, device_id: str) -> Optional[str]:
-        """Lease an IP from the DHCP pool. Returns None if pool is exhausted."""
-        with self._pool_lock:
-            if not self._ip_pool:
-                return None
-            ip = self._ip_pool.pop()
-            self._active_leases[ip] = {
-                "agent_id": agent_id,
-                "device_id": device_id,
-                "leased_at": datetime.datetime.now().isoformat(),
-            }
-            return ip
-
-    def _release_ip(self, ip: str):
-        """Return a leased IP back to the pool."""
-        with self._pool_lock:
-            if ip in self._active_leases:
-                del self._active_leases[ip]
-                self._ip_pool.add(ip)
-
-    def _generate_ip_address_for_device(self, agent_id: int, device_type: str) -> str:
-        """Generate a unique IP address for a specific device"""
-        # Device type to number mapping for IP generation
-        device_type_mapping = {
-            "smartphone": 1,
-            "laptop": 2,
-            "desktop": 3,
-            "tablet": 4
-        }
-
-        # Generate IP based on antenna ID, agent ID, and device type
-        octet1 = 10  # Private IP range
-        octet2 = (self.id // 256) % 256
-        octet3 = self.id % 256
-        device_offset = device_type_mapping.get(device_type, 0) * 50
-        octet4 = ((agent_id + device_offset) % 254) + 1
-        return f"{octet1}.{octet2}.{octet3}.{octet4}"
 
     def _log_device_connection(self, agent_id: int, action: str, device_info: dict):
         """
@@ -265,7 +233,14 @@ class Antenna:
             "range": self.range
         }
 
-def _generate_antennas_grid(min_x, max_x, min_y, max_y, antenna_range):
+def _generate_antennas_grid(
+    min_x,
+    max_x,
+    min_y,
+    max_y,
+    antenna_range,
+    ip_strategy: Optional[AntennaIPStrategy] = None,
+):
     """
     Generate a list of Antenna objects evenly distributed in a grid
     to cover the entire specified area.
@@ -287,7 +262,8 @@ def _generate_antennas_grid(min_x, max_x, min_y, max_y, antenna_range):
                 Antenna(
                     id=antenna_id_counter,
                     position={"x": current_x, "y": current_y},
-                    antenna_range=antenna_range
+                    antenna_range=antenna_range,
+                    ip_strategy=ip_strategy,
                 )
             )
             antenna_id_counter += 1
@@ -297,7 +273,15 @@ def _generate_antennas_grid(min_x, max_x, min_y, max_y, antenna_range):
     return antennas
 
 # Global list of antennas containing Antenna objects
-ANTENNAS = _generate_antennas_grid(MIN_X, MAX_X, MIN_Y, MAX_Y, ANTENNA_RANGE)
+DEFAULT_ANTENNA_IP_STRATEGY = SharedAntennaIPStrategy(host_octet=1)
+ANTENNAS = _generate_antennas_grid(
+    MIN_X,
+    MAX_X,
+    MIN_Y,
+    MAX_Y,
+    ANTENNA_RANGE,
+    ip_strategy=DEFAULT_ANTENNA_IP_STRATEGY,
+)
 
 print(f"[{__name__}] Generated {len(ANTENNAS)} Antenna objects covering the map.")
 

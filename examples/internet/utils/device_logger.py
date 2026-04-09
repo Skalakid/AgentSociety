@@ -17,12 +17,15 @@ def log_device_usage(
     device_id: str,
     device_type: str,
     device_name: str,
-    action_type: str,
-    action_description: str,
+    browser_id: Optional[str] = None,
+    action_type: str = "browse",
+    action_description: str = "",
     task_target: Optional[str] = None,
     success: bool = True,
     metadata: Optional[dict] = None,
     website: Optional[str] = None,
+    ip_address: Optional[str] = None,
+    sim_time: Optional[str] = None,
 ):
     """
     Log when an agent uses a device to solve a task or perform an action.
@@ -40,22 +43,27 @@ def log_device_usage(
         metadata: Optional additional metadata (e.g., website visited, time spent, etc.)
         website: Optional - specific website visited during this action
     """
+    timestamp = datetime.datetime.now().isoformat()
+
     log_entry = {
-        "timestamp": datetime.datetime.now().isoformat(),
+        "timestamp": timestamp,
+        "sim_time": sim_time,
         "agent_id": agent_id,
         "agent_name": agent_name,
         "device_id": device_id,
         "device_type": device_type,
         "device_name": device_name,
+        "browser_id": browser_id,
+        "ip_address": ip_address,
         "action_type": action_type,
         "action_description": action_description,
         "task_target": task_target,
         "success": success,
     }
-    
+
     if website:
         log_entry["website"] = website
-    
+
     # Add metadata last
     if metadata:
         log_entry["metadata"] = metadata

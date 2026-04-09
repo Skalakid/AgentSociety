@@ -295,7 +295,14 @@ Website:"""
 
         # Select an appropriate website for this task using LLM
         website = await self._select_website_for_task(task_type, action_description)
-        
+
+        # Get the stable per-site browser ID for this (device, site) pair
+        browser_id = device.get_browser_id_for_site(website) if website else None
+
+        # Resolve current IP and simulated time
+        ip_address = self._get_current_ip(device_id)
+        sim_day, sim_time = self.environment.get_datetime(format_time=True)
+
         # Add website to metadata
         enhanced_metadata = metadata.copy() if metadata else {}
         if website:
@@ -308,19 +315,32 @@ Website:"""
             device_id=device_id,
             device_type=device.device_type.value,
             device_name=device.name,
+            browser_id=browser_id,
             action_type=task_type,
             action_description=action_description,
             task_target=task_target,
             success=True,
             metadata=enhanced_metadata,
             website=website,
+            ip_address=ip_address,
+            sim_time=f"day{sim_day} {sim_time}",
         )
 
         if website:
             print(f"$DEVICE$ - {self.name} used {device.name} to visit {website}: {action_description}")
         else:
             print(f"$DEVICE$ - {self.name} used {device.name} to: {action_description}")
-    
+
+    def _get_current_ip(self, device_id: str):
+        """Return the current IP address for a device, or None if unavailable."""
+        if device_id in self.home_leased_ips:
+            return self.home_leased_ips[device_id]
+        if self.connected_antenna:
+            for conn in self.connected_antenna.connected_devices.get(self.id, []):
+                if conn.get("device_id") == device_id:
+                    return conn.get("ip_address")
+        return None
+
     async def _handle_website_browsing(self, duration: int):
         """Handle website browsing logic"""
         if not self.connected_antenna:
