@@ -33,11 +33,18 @@ source venv/bin/activate
 
 ### 2. Instalacja biblioteki agentsociety
 
-Z głównego katalogu projektu `agentsociety`:
+Z głównego katalogu projektu `agentsociety` uruchom skrypt konfiguracyjny:
 
 ```bash
-pip install agentsociety
+bash examples/internet/setup.sh
 ```
+
+Skrypt automatycznie:
+- Tworzy środowisko wirtualne `.venv`
+- Instaluje `agentsociety` z lokalnego kodu źródłowego (nie z PyPI)
+- Ustawia `numpy` w wersji 2.x (wymaganej przez `mosstool`)
+
+> **Ważne:** Nie używaj `pip install agentsociety` (instalacja z PyPI). Instalacja lokalna zapewnia, że korzystasz z najnowszej wersji kodu źródłowego z tego repozytorium, w tym wszystkich poprawek błędów.
 
 ## Jak uruchomić
 
