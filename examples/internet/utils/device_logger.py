@@ -85,6 +85,8 @@ def log_position_change(
     distance: float,
     connectivity: str,
     sim_time: Optional[str] = None,
+    plan_target: Optional[str] = None,
+    step_intention: Optional[str] = None,
 ):
     """
     Log an agent's position change.
@@ -97,6 +99,8 @@ def log_position_change(
         distance: Distance moved in map units
         connectivity: Current connectivity status ("home_wifi", "antenna", "none")
         sim_time: Simulated time string
+        plan_target: High-level goal the agent is pursuing (e.g. "Work", "Shopping")
+        step_intention: Current step being executed (e.g. "Commute to work")
     """
     entry = {
         "timestamp": datetime.datetime.now().isoformat(),
@@ -107,6 +111,8 @@ def log_position_change(
         "to": {"x": new_x, "y": new_y},
         "distance": round(distance, 2),
         "connectivity": connectivity,
+        "plan_target": plan_target,
+        "step_intention": step_intention,
     }
 
     with position_log_lock:

@@ -86,6 +86,17 @@ class InternetAgent(SocietyAgent):
                     else "none"
                 )
                 sim_day, sim_time = self.environment.get_datetime(format_time=True)
+
+                current_plan = await self.memory.status.get("current_plan")
+                plan_target = None
+                step_intention = None
+                if current_plan:
+                    plan_target = current_plan.get("target")
+                    steps = current_plan.get("steps", [])
+                    idx = current_plan.get("index", 0)
+                    if steps and idx < len(steps):
+                        step_intention = steps[idx].get("intention")
+
                 log_position_change(
                     agent_id=self.id,
                     agent_name=self.name,
@@ -96,6 +107,8 @@ class InternetAgent(SocietyAgent):
                     distance=dist,
                     connectivity=connectivity,
                     sim_time=f"day{sim_day} {sim_time}",
+                    plan_target=plan_target,
+                    step_intention=step_intention,
                 )
 
         # Update internet connectivity and device awareness in memory
