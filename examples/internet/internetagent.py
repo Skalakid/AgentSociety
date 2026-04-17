@@ -15,6 +15,11 @@ from utils.device_logger import log_device_usage, log_internet_browsing
 
 logger = logging.getLogger(__name__)
 
+# Day 0 of the simulation corresponds to this weekday (0=Monday … 6=Sunday)
+START_WEEKDAY = 0  # Monday
+
+_WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
 class InternetAgent(SocietyAgent):
     def __init__(self, id: int, name: str, toolbox, memory, agent_params=None, blocks=None):
         # Override the plan generation prompt with our custom one that includes device_usage
@@ -39,6 +44,7 @@ class InternetAgent(SocietyAgent):
 
         self.interests = self._assign_interests()
         self.known_websites = self._generate_initial_websites()
+        self.recently_visited: list[str] = []  # Last N visited sites, used to force variety
         self.last_xy_position = None  # Track last position for comparison
         self.ict_devices: list[ICTDevice] = []  # Will be populated after memory is initialized
 
@@ -77,6 +83,15 @@ class InternetAgent(SocietyAgent):
         # Update device awareness text so agent knows what devices they have and can use
         device_awareness = get_device_awareness_text(self.ict_devices, has_internet)
         await self.memory.status.update("ict_devices", device_awareness)
+
+        # Update current simulation day/time for use in the plan prompt
+        sim_day, sim_time = self.environment.get_datetime(format_time=True)
+        weekday_idx = (START_WEEKDAY + sim_day) % 7
+        weekday_name = _WEEKDAY_NAMES[weekday_idx]
+        day_type = "weekend" if weekday_idx >= 5 else "weekday"
+        await self.memory.status.update(
+            "current_day_info", f"{weekday_name} ({day_type}), {sim_time}"
+        )
 
         duration = await super().forward()
 
@@ -176,8 +191,17 @@ class InternetAgent(SocietyAgent):
         if not capable_devices:
             return None
 
-        # Preference order: smartphone (most portable), laptop, tablet, desktop
-        preference_order = ["smartphone", "laptop", "tablet", "desktop"]
+        # Task-specific preference order — work tasks prefer stationary devices,
+        # portable tasks prefer smartphone, everything else prefers smartphone too.
+        task_preferences = {
+            "work":   ["desktop", "laptop", "tablet", "smartphone"],
+            "stream": ["desktop", "laptop", "tablet", "smartphone"],
+            "browse": ["smartphone", "laptop", "tablet", "desktop"],
+            "shop":   ["smartphone", "laptop", "tablet", "desktop"],
+            "social": ["smartphone", "tablet", "laptop", "desktop"],
+            "call":   ["smartphone", "tablet", "laptop", "desktop"],
+        }
+        preference_order = task_preferences.get(task_type, ["smartphone", "laptop", "tablet", "desktop"])
 
         for device_type in preference_order:
             for device in capable_devices:
@@ -211,19 +235,42 @@ class InternetAgent(SocietyAgent):
             top_interests = sorted(self.interests.items(), key=lambda x: x[1], reverse=True)[:3]
             interests_context = f"\n\nAgent's main interests: {', '.join(f'{k} ({v}/10)' for k, v in top_interests)}"
         
+        # Pull candidate sites from the database for this action type
+        action_type_pools = {
+            "work":   WEBSITE_DATABASE.get("work_tools", []),
+            "shop":   WEBSITE_DATABASE.get("e-commerce", []),
+            "browse": (
+                WEBSITE_DATABASE.get("news", []) +
+                WEBSITE_DATABASE.get("food", []) +
+                WEBSITE_DATABASE.get("travel", []) +
+                WEBSITE_DATABASE.get("books", [])
+            ),
+            "stream": WEBSITE_DATABASE.get("movies", []) + WEBSITE_DATABASE.get("music", []),
+            "social": WEBSITE_DATABASE.get("social_media", []),
+            "call":   ["zoom.us", "meet.google.com", "teams.microsoft.com",
+                       "skype.com", "whatsapp.com", "signal.org"],
+        }
+        pool = action_type_pools.get(task_type, [])
+        # Merge with agent's known sites, exclude recently visited, deduplicate, sample 15
+        candidates = list({s for s in pool + [w["website"] for w in self.known_websites]
+                           if s not in self.recently_visited})
+        if not candidates:  # all candidates were recently visited — reset and allow all
+            candidates = list({s for s in pool + [w["website"] for w in self.known_websites]})
+        random.shuffle(candidates)
+        site_list = ", ".join(candidates[:15]) if candidates else "google.com"
+
         prompt = f"""You are selecting a realistic website that an agent would visit for a specific action.
 
 Action type: {task_type}
-Action description: {action_description}{known_websites_context}{interests_context}
+Action description: {action_description}{interests_context}
 
-Based on the action description, return ONE realistic website URL (domain only, no http://) that the agent would visit.
+Choose ONE website from this list that best matches the action description:
+{site_list}
 
 Rules:
-1. Be specific and realistic - match the exact action (e.g., "check email" → gmail.com or outlook.com, not news sites)
-2. Prefer popular, well-known websites that actually exist
-3. Consider the agent's known websites and interests when choosing
-4. Return ONLY the domain (e.g., "gmail.com" not "https://gmail.com")
-5. Make it contextually appropriate (work email → professional sites, shopping → e-commerce sites)
+1. Pick from the list above — do NOT invent a site not in the list
+2. Match the action as specifically as possible (recipe search → food site, email check → mail site)
+3. Return ONLY the domain (e.g., "kwestiasmaku.com"). No http://, no explanations.
 
 Website:"""
 
@@ -247,27 +294,42 @@ Website:"""
             
             # Basic validation - should have a dot and be reasonable length
             if '.' in website and 3 < len(website) < 50 and ' ' not in website:
+                self._record_visit(website)
                 return website
             
         except Exception as e:
             print(f"$DEVICE$ - Failed to get LLM website selection: {e}")
         
-        # Fallback to simple defaults based on action keywords
+        # Fallback defaults — respect action_type first, then keywords
+        type_fallbacks = {
+            "work":   "outlook.com",
+            "shop":   "allegro.pl",
+            "stream": "youtube.com",
+            "social": "facebook.com",
+            "call":   "zoom.us",
+            "browse": "google.com",
+        }
         action_lower = action_description.lower()
-        if 'email' in action_lower or 'mail' in action_lower:
-            return 'gmail.com'
-        elif 'shop' in action_lower or 'buy' in action_lower or 'purchase' in action_lower:
-            return 'amazon.com'
-        elif 'bank' in action_lower or 'account' in action_lower:
-            return 'online-banking.com'
+        if task_type in type_fallbacks:
+            site = type_fallbacks[task_type]
+        elif 'email' in action_lower or 'mail' in action_lower:
+            site = 'gmail.com'
         elif 'news' in action_lower or 'weather' in action_lower:
-            return 'news.google.com'
+            site = 'news.google.com'
         elif 'video' in action_lower or 'movie' in action_lower:
-            return 'youtube.com'
-        elif 'social' in action_lower or 'post' in action_lower:
-            return 'facebook.com'
+            site = 'youtube.com'
         else:
-            return 'google.com'
+            site = 'google.com'
+        self._record_visit(site)
+        return site
+
+    def _record_visit(self, website: str, max_history: int = 10):
+        """Track recently visited sites to prevent the same site being picked repeatedly."""
+        if website in self.recently_visited:
+            self.recently_visited.remove(website)
+        self.recently_visited.append(website)
+        if len(self.recently_visited) > max_history:
+            self.recently_visited.pop(0)
 
     async def log_device_action(self, task_type: str, action_description: str, task_target: str = None, metadata: dict = None):
         """

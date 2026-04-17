@@ -20,7 +20,7 @@ from agentsociety.environment import EnvironmentConfig
 from agentsociety.llm import LLMProviderType
 from agentsociety.simulation import AgentSociety
 from agentsociety.storage import DatabaseConfig
-from internetagent import InternetAgent
+from internetagent import InternetAgent, START_WEEKDAY
 from internet_memory_config import memory_config_internetagent
 
 config = Config(
@@ -28,7 +28,7 @@ config = Config(
         LLMConfig(
             provider=LLMProviderType.ZhipuAI,
             base_url=None,
-            api_key="",
+            api_key="bc2e3cb9022b4d38b5f144b166d1ac11.oKkJEOu2i4TYw69z",
             model="GLM-4-Flash",
             semaphore=200,
         )
@@ -60,7 +60,7 @@ config = Config(
         ]
     ),  # type: ignore
     exp=ExpConfig(
-        name="internet",
+        name="internet 11.12 device test",
         workflow=[
             WorkflowStepConfig(
                 type=WorkflowType.RUN,
@@ -68,8 +68,8 @@ config = Config(
             ),
         ],
         environment=EnvironmentConfig(
-            start_tick=12 * 60 * 60,  # Start at 12:00 PM
-            total_tick= 8 * 60 * 60,  # Run for 8 hours (until 8:00 PM) to see more movement
+            start_tick=6 * 60 * 60,    # Start at 06:00 AM
+            total_tick=18 * 60 * 60,   # Run for 18 hours (until midnight)
         ),
     ),
 )

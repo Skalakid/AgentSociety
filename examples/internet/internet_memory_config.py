@@ -31,6 +31,13 @@ def memory_config_internetagent(distributions, class_config=None):
             description="Description of ICT devices owned by the agent and their capabilities",
             whether_embedding=False,
         ),
+        "current_day_info": MemoryAttribute(
+            name="current_day_info",
+            type=str,
+            default_or_value="Monday (weekday), 06:00:00",
+            description="Current simulation day of week, type (weekday/weekend), and time — updated every tick",
+            whether_embedding=False,
+        ),
     }
 
     # Merge the attributes

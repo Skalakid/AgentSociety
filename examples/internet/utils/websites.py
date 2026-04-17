@@ -1,4 +1,22 @@
 WEBSITE_DATABASE = {
+    "food": [
+        "kwestiasmaku.com", "przepisy.pl", "aniagotuje.pl", "allrecipes.com",
+        "mojewypieki.com", "mniammniam.pl", "gotujmy.pl", "smacznastrona.pl",
+        "jadlonomia.com", "ugotuj.to", "hellofresh.pl", "tesco.pl/przepisy",
+        "lidl.pl/przepisy", "bbc.co.uk/food", "seriouseats.com", "bonappetit.com",
+        "epicurious.com", "foodnetwork.com", "tasty.co", "delish.com",
+        "cookinglight.com", "myrecipes.com", "food52.com", "thekitchn.com",
+        "minimalistbaker.com"
+    ],
+    "work_tools": [
+        "gmail.com", "outlook.com", "slack.com", "teams.microsoft.com",
+        "notion.so", "trello.com", "asana.com", "jira.atlassian.com",
+        "confluence.atlassian.com", "github.com", "gitlab.com", "bitbucket.org",
+        "drive.google.com", "dropbox.com", "onedrive.live.com", "zoom.us",
+        "meet.google.com", "webex.com", "miro.com", "figma.com",
+        "airtable.com", "monday.com", "basecamp.com", "clickup.com",
+        "linear.app"
+    ],
     "sport": [
         "eurosport.com", "sport.pl", "transfery.info", "laczynaspilka.pl",
         "f1.com", "przegladsportowy.pl", "legia.net", "realmadrid.com",
