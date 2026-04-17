@@ -1,6 +1,16 @@
 import asyncio
-
+import inspect
 import copy
+
+import agentsociety.vectorstore.vectorstore as _vs
+_vs_source = inspect.getsourcefile(_vs.VectorStore)
+with open(_vs_source) as _f:
+    _vs_code = _f.read()
+if "query_points" in _vs_code:
+    print("---- THIS IS A PATCHED VERSION ----")
+else:
+    print("WARNING: unpatched vectorstore detected — simulation may crash (QdrantClient.search removed)")
+
 from agentsociety.cityagent import default, DEFAULT_DISTRIBUTIONS
 from agentsociety.cityagent.blocks.economy_block import EconomyBlock, EconomyBlockParams
 from agentsociety.cityagent.blocks.mobility_block import MobilityBlock, MobilityBlockParams

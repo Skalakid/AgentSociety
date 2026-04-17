@@ -1,3 +1,20 @@
+CUSTOM_BLOCK_DISPATCH_PROMPT = """
+Select the most appropriate block to handle the task below.
+
+Task intention: ${context.current_intention}
+
+Block selection rules (pick exactly one):
+- mobilityblock: moving, traveling, commuting, going somewhere, walking, driving
+- economyblock: shopping, buying, working, earning, spending money, business tasks
+- socialblock: talking to people, meeting friends/family, social interaction, chatting
+- otherblock: EVERYTHING else — including sleep, rest, relaxing, eating, cooking,
+              personal hygiene, hobbies, entertainment, setting alarms, preparing for bed,
+              transitioning to sleep, waking up, exercising, reading, any activity
+              that is not movement, economic, or social
+
+When in doubt, choose otherblock.
+"""
+
 INTERNET_AWARENESS_PROMPT = """
 IMPORTANT: You are living in a modern digital society where the internet and ICT devices play a crucial role in daily life.
 
@@ -75,7 +92,7 @@ Current simulation day and time: ${profile.current_day_info}
 
 ## General rhythm (applies to everyone)
 - Early morning (06:00–08:00): wake up, hygiene, breakfast — mostly at home.
-- Late night (23:30–06:00): sleep — no activities, no device usage.
+- Late night (23:30–06:00): sleep — no activities, no device usage. If the plan target is sleep, generate exactly ONE step with intention "Sleep" and type "other". Do not generate sub-steps like "prepare for sleep", "set alarm", or "verify sleep intention".
 - Mealtimes (07:30, 13:00, 19:00) often anchor movement — going out to eat, cooking, grocery shopping.
 - People leave home multiple times per day for different reasons — do not cluster everything at home.
 

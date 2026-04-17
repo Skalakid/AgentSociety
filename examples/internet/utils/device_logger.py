@@ -8,7 +8,7 @@ import threading
 from typing import Optional
 
 # Import the log path and lock from antennas
-from .antennas import FULL_DEVICE_USAGE_LOG_PATH, device_usage_lock
+from .antennas import FULL_DEVICE_USAGE_LOG_PATH, device_usage_lock, FULL_POSITION_LOG_PATH, position_log_lock
 
 
 def log_device_usage(
@@ -73,6 +73,45 @@ def log_device_usage(
     with device_usage_lock:
         with open(FULL_DEVICE_USAGE_LOG_PATH, 'a') as f:
             f.write(json.dumps(log_entry) + '\n')
+
+
+def log_position_change(
+    agent_id: int,
+    agent_name: str,
+    old_x: float,
+    old_y: float,
+    new_x: float,
+    new_y: float,
+    distance: float,
+    connectivity: str,
+    sim_time: Optional[str] = None,
+):
+    """
+    Log an agent's position change.
+
+    Args:
+        agent_id: Unique agent identifier
+        agent_name: Human-readable agent name
+        old_x, old_y: Previous coordinates
+        new_x, new_y: New coordinates
+        distance: Distance moved in map units
+        connectivity: Current connectivity status ("home_wifi", "antenna", "none")
+        sim_time: Simulated time string
+    """
+    entry = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "sim_time": sim_time,
+        "agent_id": agent_id,
+        "agent_name": agent_name,
+        "from": {"x": old_x, "y": old_y},
+        "to": {"x": new_x, "y": new_y},
+        "distance": round(distance, 2),
+        "connectivity": connectivity,
+    }
+
+    with position_log_lock:
+        with open(FULL_POSITION_LOG_PATH, "a") as f:
+            f.write(json.dumps(entry) + "\n")
 
 
 def log_internet_browsing(

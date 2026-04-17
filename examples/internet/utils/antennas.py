@@ -23,19 +23,23 @@ GLOBAL_INTERNET_LOG_FILE = "all_internet_activity_logs.jsonl"
 GLOBAL_DEVICE_CONNECTION_LOG_FILE = "antenna_device_connections.jsonl"
 GLOBAL_DEVICE_USAGE_LOG_FILE = "device_usage_logs.jsonl"
 GLOBAL_LOG_DIR = "internet_logs"
+POSITION_LOG_DIR = "position_logs"
 
-# Ensure the log directory exists
+# Ensure the log directories exist
 os.makedirs(GLOBAL_LOG_DIR, exist_ok=True)
+os.makedirs(POSITION_LOG_DIR, exist_ok=True)
 
 # Full paths to log files
 FULL_GLOBAL_LOG_PATH = os.path.join(GLOBAL_LOG_DIR, GLOBAL_INTERNET_LOG_FILE)
 FULL_DEVICE_CONNECTION_LOG_PATH = os.path.join(GLOBAL_LOG_DIR, GLOBAL_DEVICE_CONNECTION_LOG_FILE)
 FULL_DEVICE_USAGE_LOG_PATH = os.path.join(GLOBAL_LOG_DIR, GLOBAL_DEVICE_USAGE_LOG_FILE)
+FULL_POSITION_LOG_PATH = os.path.join(POSITION_LOG_DIR, "position_logs.jsonl")
 
 # Create locks for thread-safe file writing
 log_file_lock = threading.Lock()
 device_connection_lock = threading.Lock()
 device_usage_lock = threading.Lock()
+position_log_lock = threading.Lock()
 
 class Antenna:
     def __init__(

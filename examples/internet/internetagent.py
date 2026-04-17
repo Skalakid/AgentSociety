@@ -9,9 +9,9 @@ from agentsociety.cityagent import SocietyAgent
 from utils.antennas import ANTENNAS
 from utils.home_wifi import get_or_create_home_router, HOME_AT_DISTANCE
 from utils.websites import WEBSITE_DATABASE
-from utils.prompts import CUSTOM_DETAILED_PLAN_PROMPT
+from utils.prompts import CUSTOM_DETAILED_PLAN_PROMPT, CUSTOM_BLOCK_DISPATCH_PROMPT
 from utils.ict_devices import assign_devices_to_agent, get_device_awareness_text, ICTDevice
-from utils.device_logger import log_device_usage, log_internet_browsing
+from utils.device_logger import log_device_usage, log_internet_browsing, log_position_change
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class InternetAgent(SocietyAgent):
         # Override the plan generation prompt with our custom one that includes device_usage
         if agent_params:
             agent_params.plan_generation_prompt = CUSTOM_DETAILED_PLAN_PROMPT
+            agent_params.block_dispatch_prompt = CUSTOM_BLOCK_DISPATCH_PROMPT
 
         super().__init__(
             id=id,
@@ -72,9 +73,30 @@ class InternetAgent(SocietyAgent):
                 self.last_xy_position = {"x": current_xy["x"], "y": current_xy["y"]}
             elif self.last_xy_position['x'] != current_xy['x'] or self.last_xy_position['y'] != current_xy['y']:
                 # Position changed
-                print(f"$ANTENA$ - {self.name} position changed from ({self.last_xy_position['x']},{self.last_xy_position['y']}) to ({current_xy['x']},{current_xy['y']})")
+                old_x, old_y = self.last_xy_position['x'], self.last_xy_position['y']
+                new_x, new_y = current_xy['x'], current_xy['y']
+                dist = self._distance({"x": old_x, "y": old_y}, {"x": new_x, "y": new_y})
+                print(f"$ANTENA$ - {self.name} position changed from ({old_x},{old_y}) to ({new_x},{new_y})")
                 await self.connect_to_nearest_antenna(current_xy)
-                self.last_xy_position = {"x": current_xy["x"], "y": current_xy["y"]}
+                self.last_xy_position = {"x": new_x, "y": new_y}
+
+                connectivity = (
+                    "home_wifi" if self.home_leased_ips
+                    else "antenna" if self.connected_antenna
+                    else "none"
+                )
+                sim_day, sim_time = self.environment.get_datetime(format_time=True)
+                log_position_change(
+                    agent_id=self.id,
+                    agent_name=self.name,
+                    old_x=old_x,
+                    old_y=old_y,
+                    new_x=new_x,
+                    new_y=new_y,
+                    distance=dist,
+                    connectivity=connectivity,
+                    sim_time=f"day{sim_day} {sim_time}",
+                )
 
         # Update internet connectivity and device awareness in memory
         has_internet = self.connected_antenna is not None or bool(self.home_leased_ips)
